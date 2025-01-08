@@ -42,6 +42,44 @@ local mainWindow = false
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
+local function GetBuyWindow(parent)
+	local screenWidth, screenHeight = Spring.GetViewGeometry()
+	local teamID = Spring.GetMyTeamID()
+	local window = Window:New{
+		parent = parent,
+		width = "40%",
+		height = "80%",
+		classname = "main_window_small",
+		x = "5%",
+		y = "10%",
+		dockable = false,
+		draggable = false,
+		resizable = false,
+		tweakDraggable = true,
+		tweakResizable = false,
+		padding = {0, 0, 0, 0},
+	}
+	
+	local shopWidth = Spring.GetGameRulesParam("rk_shop_width")
+	local shopHeight = Spring.GetGameRulesParam("rk_shop_height")
+	for i = 1, shopWidth do
+		for j = 1, shopHeight do
+			local shopItem = Spring.GetTeamRulesParam(teamID, "rk_shop_item_" .. i .. "_" .. j)
+	
+			local button = Button:New {
+				x = i*65,
+				y = j*65,
+				width = 65,
+				height = 65,
+				caption = shopItem,
+				padding = {0, 0, 0, 0},
+				parent = window,
+				preserveChildrenOrder = true,
+			}
+		end
+	end
+end
+
 local function SetupWindow()
 	local screenWidth, screenHeight = Spring.GetViewGeometry()
 	
@@ -61,23 +99,7 @@ local function SetupWindow()
 		noClickThrough = true,
 		padding = {0, 0, 0, 0},
 	}
-	
-	Window:New{
-		parent = newMainWindow,
-		name  = 'rk_main_menu',
-		width = 280,
-		height = 320,
-		classname = "main_window_small",
-		x = screenWidth/2 - 140,
-		y = screenHeight/2 - 160,
-		dockable = false,
-		draggable = false,
-		resizable = false,
-		tweakDraggable = true,
-		tweakResizable = false,
-		padding = {0, 0, 0, 0},
-		--itemMargin  = {0, 0, 0, 0},
-	}
+	GetBuyWindow(newMainWindow)
 	
 	return newMainWindow
 end
