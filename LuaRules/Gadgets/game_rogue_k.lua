@@ -27,6 +27,16 @@ local shopDefs = VFS.Include("LuaRules/Configs/rk_shop.lua")
 GG.MOD_MISSION = true
 
 local roundNumber = false
+local playerTeamList = {}
+do
+	local teamList = Spring.GetTeamList()
+	for i = 1, #teamList do
+		local teamID, leaderID, isDead, isAiTeam = Spring.GetTeamInfo(teamList[i])
+		if (leaderID or 0) >= 0 and not isAiTeam then
+			playerTeamList[#playerTeamList + 1] = teamID
+		end
+	end
+end
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -47,11 +57,15 @@ local function SetupTeamShop(teamID, roundDef)
 				perkCount[name] = (perkCount[name] or 0) + 1
 				Spring.SetTeamRulesParam(teamID, "rk_shop_item_" .. i .. "_" .. j, perks[name][perkCount[name]])
 			end
-			
-		
 			index = index + 1
 		end
 	end
+end
+
+local function InitPlayerTeam(teamID)
+	Spring.SetTeamRulesParam(teamID, "rk_unit_combo_1", "combo_mason")
+	Spring.SetTeamRulesParam(teamID, "rk_unit_limit", 5)
+	Spring.SetTeamRulesParam(teamID, "rk_modules_per_unit", 2)
 end
 
 local function StartNextRound()
@@ -63,12 +77,9 @@ local function StartNextRound()
 	Spring.SetGameRulesParam("rk_shop_width", roundDef.shopSize[1])
 	Spring.SetGameRulesParam("rk_shop_height", roundDef.shopSize[2])
 	
-	local teamList = Spring.GetTeamList()
-	for i = 1, #teamList do
-		local teamID, leaderID, isDead, isAiTeam = Spring.GetTeamInfo(teamList[i])
-		if (leaderID or 0) >= 0 and not isAiTeam then
-			SetupTeamShop(teamID, roundDef)
-		end
+	for i = 1, #playerTeamList do
+		local teamID = playerTeamList[i]
+		SetupTeamShop(teamID, roundDef)
 	end
 end
 
@@ -78,6 +89,10 @@ end
 
 local function NewGame(cmd, line, words, player)
 	Spring.SetGameRulesParam("rk_preGame", 0)
+	for i = 1, #playerTeamList do
+		local teamID = playerTeamList[i]
+		InitPlayerTeam(teamID)
+	end
 	StartNextRound()
 end
 

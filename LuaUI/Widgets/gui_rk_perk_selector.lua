@@ -47,8 +47,10 @@ local BUTTON_COLOR
 local BUTTON_FOCUS_COLOR
 local BUTTON_BORDER_COLOR
 
-local inventoryWidth = 9
+local inventoryWidth = 7
 local inventoryHeight = 2
+
+local ARMY_BUTTON_SIZE = 65
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -117,14 +119,81 @@ end
 --------------------------------------------------------------------------------
 
 local function GetUnitEntry(parent, index)
+	local teamID = Spring.GetMyTeamID()
 	local holder = Control:New {
 		parent = parent,
 		x = 0,
-		y = (index-1)*130,
+		y = (index-1)*(55 + ARMY_BUTTON_SIZE),
 		right = 0,
-		height = 130,
+		height = (55 + ARMY_BUTTON_SIZE),
 		padding = { 0, 0, 0, 0 },
 	}
+	
+	local externalFuncs = {}
+	local comboUnit = Spring.GetTeamRulesParam(teamID, "rk_unit_combo_" .. index)
+	local mount = (not comboUnit) and Spring.GetTeamRulesParam(teamID, "rk_unit_mount_" .. index)
+	local turret = (not comboUnit) and Spring.GetTeamRulesParam(teamID, "rk_unit_turret_" .. index)
+	
+	if not (comboUnit or mount or turret) then
+		local newUnit = Button:New {
+			parent = holder,
+			x = 25,
+			y = 25,
+			right = 25,
+			bottom = 25,
+			font = WG.GetFont(32),
+			caption = "New unit: Place a turret, chassis or all-in-one here.",
+			padding = {0, 0, 0, 0},
+		}
+		return
+	end
+	
+	local unitName = false
+	if comboUnit then
+		local comboCtrl = Button:New {
+			parent = holder,
+			x = 5,
+			y = 50,
+			width = ARMY_BUTTON_SIZE,
+			height = ARMY_BUTTON_SIZE,
+			caption = "comboUnit",
+			padding = {0, 0, 0, 0},
+		}
+		SetButtonState(comboCtrl, true)
+		comboCtrl:SetCaption("bla")
+		unitName = "Bla"
+	else
+		local mountCtrl = Button:New {
+			parent = holder,
+			x = 5,
+			y = 50,
+			width = ARMY_BUTTON_SIZE,
+			height = ARMY_BUTTON_SIZE,
+			caption = "mount",
+			padding = {0, 0, 0, 0},
+		}
+		local turretCtrl = Button:New {
+			parent = holder,
+			x = ARMY_BUTTON_SIZE + 5,
+			y = 50,
+			width = ARMY_BUTTON_SIZE,
+			height = ARMY_BUTTON_SIZE,
+			caption = "turret",
+			padding = {0, 0, 0, 0},
+		}
+		if mount then
+			mountCtrl:SetCaption("bla")
+		else
+			SetButtonState(mountCtrl, true)
+		end
+		if turret then
+			turretCtrl:SetCaption("bla")
+		else
+			SetButtonState(turretCtrl, true)
+		end
+		unitName = "Bla"
+	end
+	
 	local unitNameBox = TextBox:New {
 		parent = holder,
 		x = 8,
@@ -132,27 +201,22 @@ local function GetUnitEntry(parent, index)
 		y = 16,
 		padding = { 4, 4, 4, 4 },
 		fontSize = 20,
-		text = "Empty Slot",
+		text = unitName,
 	}
 	
-	local turret = Button:New {
-		parent = holder,
-		x = 5,
-		y = 55,
-		width = 70,
-		height = 70,
-		caption = "turret",
-		padding = {0, 0, 0, 0},
-	}
-	local mount = Button:New {
-		parent = holder,
-		x = 80,
-		y = 55,
-		width = 70,
-		height = 70,
-		caption = "mount",
-		padding = {0, 0, 0, 0},
-	}
+	local moduleLimit = Spring.GetTeamRulesParam(teamID, "rk_modules_per_unit")
+	for i = 1, moduleLimit do
+		local item = Spring.GetTeamRulesParam(teamID, "rk_unit_module_" .. index .. "_" .. i)
+		local turretCtrl = Button:New {
+			parent = holder,
+			x = ARMY_BUTTON_SIZE + 25 + i*ARMY_BUTTON_SIZE,
+			y = 50,
+			width = ARMY_BUTTON_SIZE,
+			height = ARMY_BUTTON_SIZE,
+			caption = "empty",
+			padding = {0, 0, 0, 0},
+		}
+	end
 end
 
 local function GetArmyWindow(parent)
@@ -160,11 +224,11 @@ local function GetArmyWindow(parent)
 	local teamID = Spring.GetMyTeamID()
 	local window = Window:New{
 		parent = parent,
-		width = "43%",
-		height = "80%",
+		width = "35%",
+		height = "90%",
 		classname = "main_window_small",
 		right = "5%",
-		y = "10%",
+		y = "5%",
 		dockable = false,
 		draggable = false,
 		resizable = false,
@@ -196,16 +260,18 @@ local function GetArmyWindow(parent)
 			local item = Spring.GetTeamRulesParam(teamID, "rk_inv_item_" .. index)
 			local myIndex = index
 			local button = Button:New {
-				x = i*80- 30,
-				y = j*80 + 520,
+				buttonType = "inventory",
+				buttonIndex = myIndex,
+				x = i*80 - 30,
+				bottom = (inventoryHeight - j)*80 + 64,
 				width = 80,
 				height = 80,
 				caption = item or "",
 				padding = {0, 0, 0, 0},
 				parent = window,
-				OnClick = {function (self) 
+				OnClick = {function (self)
 					ClickInventoryButtion(myIndex)
-				end}
+				end},
 			}
 			if not item then
 				SetButtonState(button, true)
@@ -224,11 +290,11 @@ local function GetArmyWindow(parent)
 		bottom = "30%",
 		padding = { 4, 4, 4, 4 },
 		scrollbarSize = 6,
-		horizontalScrollbar = false,
+		horizontalScrollbar = true,
 	}
 	
 	local units = {}
-	for i = 1, 4 do
+	for i = 1, Spring.GetTeamRulesParam(teamID, "rk_unit_limit") do
 		units[i] = GetUnitEntry(unitPanel, i)
 	end
 	
@@ -246,6 +312,9 @@ local function GetArmyWindow(parent)
 	
 	return externalFuncs
 end
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
 local function GetBuyWindow(parent, armyFunctions)
 	local screenWidth, screenHeight = Spring.GetViewGeometry()
@@ -338,6 +407,9 @@ local function GetBuyWindow(parent, armyFunctions)
 		end
 	end
 end
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
 local function AddMenuButtons(parent)
 	local button = Button:New {

@@ -13,6 +13,10 @@ local mounts = {
 	"mount_ravager",
 }
 
+local combos = {
+	"combo_mason",
+}
+
 local modules = {
 	"base_damage",
 	"base_range",
@@ -47,6 +51,7 @@ local defs = {
 		turrets = turrets,
 		mounts = mounts,
 		modules = modules,
+		combos = combos,
 	},
 }
 
