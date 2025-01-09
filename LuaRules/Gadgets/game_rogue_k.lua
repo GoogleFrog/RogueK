@@ -17,22 +17,8 @@ if (gadgetHandler:IsSyncedCode()) then
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
--- Things to move into a defs file
 
-local roundDefs = {
-	{
-		shopSize = {3, 3},
-	},
-	{
-		shopSize = {3, 4},
-	},
-	{
-		shopSize = {3, 5},
-	},
-	{
-		shopSize = {4, 5},
-	},
-}
+local shopDefs = VFS.Include("LuaRules/Configs/rk_shop.lua")
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -46,16 +32,31 @@ local roundNumber = false
 --------------------------------------------------------------------------------
 
 local function SetupTeamShop(teamID, roundDef)
+	local index = 1
+	local perks = shopDefs.perks
+	local perkCount = {}
+	for i = 1, #roundDef.shopListsUsed do
+		local name = roundDef.shopListsUsed[i]
+		Spring.Utilities.PermuteList(perks[name])
+	end
 	for i = 1, roundDef.shopSize[1] do
 		for j = 1, roundDef.shopSize[2] do
-			Spring.SetTeamRulesParam(teamID, "rk_shop_item_" .. i .. "_" .. j, "glaive")
+			if roundDef.prescribeShop then
+				local name = roundDef.prescribeShop[index]
+				Spring.Echo("name", i, j, name)
+				perkCount[name] = (perkCount[name] or 0) + 1
+				Spring.SetTeamRulesParam(teamID, "rk_shop_item_" .. i .. "_" .. j, perks[name][perkCount[name]])
+			end
+			
+		
+			index = index + 1
 		end
 	end
 end
 
 local function StartNextRound()
 	roundNumber = (roundNumber or 0) + 1
-	local roundDef = roundDefs[roundNumber]
+	local roundDef = shopDefs.rounds[roundNumber]
 	Spring.SetGameRulesParam("rk_in_shop", 1)
 	Spring.SetGameRulesParam("rk_round_number", roundNumber)
 	
