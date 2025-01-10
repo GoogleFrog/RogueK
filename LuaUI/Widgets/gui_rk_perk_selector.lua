@@ -90,6 +90,21 @@ local function SetButtonState(button, disabled)
 	button:Invalidate()
 end
 
+
+local function GetShopName(shopItem)
+	if not shopItem then
+		return ""
+	end
+	local def = itemDefs[shopItem]
+	local shopName = def.humanName
+	if def.isTurret then
+		shopName = shopName .. '-'
+	elseif def.isMount then
+		shopName = '-' .. shopName
+	end
+	return shopName
+end
+
 local function SetActiveItem(newItem)
 	if not newItem then
 		activeItem = false
@@ -106,34 +121,137 @@ local function SetActiveItem(newItem)
 			y = my - 40,
 			width = 80,
 			height = 80,
-			caption = newItem,
 			padding = {0, 0, 0, 0},
 		}
 		activeButton.HitTest = function (self, x, y) return false end
 	end
 	activeItem = newItem
-	activeButton:SetCaption(newItem)
+	activeButton:SetCaption(GetShopName(newItem))
 	activeButton:Invalidate()
 	screen0:AddChild(activeButton)
 	activeButton:BringToFront()
 end
 
-local function GetShopName(shopItem)
-	if not shopItem then
-		return ""
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modules)
+	local teamID = Spring.GetMyTeamID()
+	local comboCtrl, turretCtrl, mountCtrl = false, false, false
+	if combo then
+		local comboName = itemDefs[combo].humanName
+		comboCtrl = Button:New {
+			parent = holder,
+			x = 5,
+			y = 50,
+			width = ARMY_BUTTON_SIZE,
+			height = ARMY_BUTTON_SIZE,
+			caption = comboName,
+			padding = {0, 0, 0, 0},
+		}
+		SetButtonState(comboCtrl, true)
+		unitFuncs.AddItem(combo, "combo")
+	else
+		turretCtrl = Button:New {
+			parent = holder,
+			x = 5,
+			y = 50,
+			width = ARMY_BUTTON_SIZE,
+			height = ARMY_BUTTON_SIZE,
+			caption = "turret",
+			padding = {0, 0, 0, 0},
+		}
+		mountCtrl = Button:New {
+			parent = holder,
+			x = ARMY_BUTTON_SIZE + 5,
+			y = 50,
+			width = ARMY_BUTTON_SIZE,
+			height = ARMY_BUTTON_SIZE,
+			caption = "chassis",
+			padding = {0, 0, 0, 0},
+		}
+		if turret then
+			turretCtrl:SetCaption(GetShopName(turret))
+			SetButtonState(turretCtrl, true)
+			unitFuncs.AddItem(turret, "turret")
+		else
+			turretCtrl.OnClick = {function (self)
+				unitFuncs.OnClickEmptySlot(self, "turret")
+			end}
+		end
+		if mount then
+			mountCtrl:SetCaption(GetShopName(mount))
+			SetButtonState(mountCtrl, true)
+			unitFuncs.AddItem(mount, "mount")
+		else
+			mountCtrl.OnClick = {function (self)
+				unitFuncs.OnClickEmptySlot(self, "mount")
+			end}
+		end
 	end
-	local def = itemDefs[shopItem]
-	local shopName = def.humanName
-	if def.isTurret then
-		shopName = shopName .. '-'
-	elseif def.isMount then
-		shopName = '-' .. shopName
+	
+	local moduleCtrls = {}
+	local moduleLimit = Spring.GetTeamRulesParam(teamID, "rk_modules_per_unit")
+	for i = 1, moduleLimit do
+		local item = modules and modules[i]
+		local moduleCtrl = Button:New {
+			parent = holder,
+			x = ARMY_BUTTON_SIZE + 25 + i*ARMY_BUTTON_SIZE,
+			y = 50,
+			width = ARMY_BUTTON_SIZE,
+			height = ARMY_BUTTON_SIZE,
+			caption = "empty",
+			padding = {0, 0, 0, 0},
+		}
+		moduleCtrls[i] = moduleCtrl
+		if item then
+			moduleCtrl:SetCaption(GetShopName(item))
+			SetButtonState(moduleCtrl, true)
+			unitFuncs.AddItem(item, "module", i)
+		else
+			moduleCtrl.OnClick = {function (self)
+				unitFuncs.OnClickEmptySlot(self, "module", i)
+			end}
+		end
 	end
-	return shopName
+	
+	unitFuncs.RegisterItemControls(comboCtrl, turretCtrl, mountCtrl, moduleCtrls)
 end
 
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
+local function InitialiseEmptyUnit(holder, unitFuncs)
+	local newUnit
+	local function ClickMakeUnit()
+		if activeItem then
+			local activeDef = itemDefs[activeItem]
+			if activeDef.isCombo or activeDef.isTurret or activeDef.isMount then
+				if activeDef.isCombo then
+					InitialiseUnitEntry(holder, unitFuncs, activeItem, false, false)
+				end
+				if activeDef.isTurret then
+					InitialiseUnitEntry(holder, unitFuncs, false, activeItem, false)
+				end
+				if activeDef.isMount then
+					InitialiseUnitEntry(holder, unitFuncs, false, false, activeItem)
+				end
+				newUnit:Dispose()
+				SetActiveItem(false)
+			end
+		end
+	end
+	newUnit = Button:New {
+		parent = holder,
+		x = 25,
+		y = 25,
+		right = 25,
+		bottom = 25,
+		font = WG.GetFont(32),
+		caption = "New unit: Place a turret, chassis or all-in-one here.",
+		OnClick = {function (self)
+			ClickMakeUnit()
+		end},
+		padding = {0, 0, 0, 0},
+	}
+end
 
 local function GetUnitEntry(parent, index)
 	local teamID = Spring.GetMyTeamID()
@@ -145,97 +263,91 @@ local function GetUnitEntry(parent, index)
 		height = (55 + ARMY_BUTTON_SIZE),
 		padding = { 0, 0, 0, 0 },
 	}
-	
-	local externalFuncs = {}
-	local comboUnit = Spring.GetTeamRulesParam(teamID, "rk_unit_combo_" .. index)
-	local mount = (not comboUnit) and Spring.GetTeamRulesParam(teamID, "rk_unit_mount_" .. index)
-	local turret = (not comboUnit) and Spring.GetTeamRulesParam(teamID, "rk_unit_turret_" .. index)
-	
-	if not (comboUnit or mount or turret) then
-		local newUnit = Button:New {
-			parent = holder,
-			x = 25,
-			y = 25,
-			right = 25,
-			bottom = 25,
-			font = WG.GetFont(32),
-			caption = "New unit: Place a turret, chassis or all-in-one here.",
-			padding = {0, 0, 0, 0},
-		}
-		return
-	end
-	
-	local unitName = false
-	if comboUnit then
-		local comboName = itemDefs[comboUnit].humanName
-		local comboCtrl = Button:New {
-			parent = holder,
-			x = 5,
-			y = 50,
-			width = ARMY_BUTTON_SIZE,
-			height = ARMY_BUTTON_SIZE,
-			caption = comboName,
-			padding = {0, 0, 0, 0},
-		}
-		SetButtonState(comboCtrl, true)
-		unitName = comboName
-	else
-		local mountCtrl = Button:New {
-			parent = holder,
-			x = 5,
-			y = 50,
-			width = ARMY_BUTTON_SIZE,
-			height = ARMY_BUTTON_SIZE,
-			caption = "mount",
-			padding = {0, 0, 0, 0},
-		}
-		local turretCtrl = Button:New {
-			parent = holder,
-			x = ARMY_BUTTON_SIZE + 5,
-			y = 50,
-			width = ARMY_BUTTON_SIZE,
-			height = ARMY_BUTTON_SIZE,
-			caption = "turret",
-			padding = {0, 0, 0, 0},
-		}
-		if mount then
-			mountCtrl:SetCaption(GetShopName(mount))
-			unitName = itemDefs[mount].humanName
-		else
-			SetButtonState(mountCtrl, true)
-			unitName = "-"
-		end
-		if turret then
-			turretCtrl:SetCaption(GetShopName(turret))
-			unitName = itemDefs[turret].humanName .. unitName
-		else
-			SetButtonState(turretCtrl, true)
-			unitName = "-" .. unitName
-		end
-	end
-	
-	local unitNameBox = TextBox:New {
+	local nameCtrl = TextBox:New {
 		parent = holder,
 		x = 8,
 		right = 0,
 		y = 16,
 		padding = { 4, 4, 4, 4 },
 		fontSize = 20,
-		text = unitName,
+		text = "",
 	}
 	
+	local comboCtrl, turretCtrl, mountCtrl, moduleCtrls = false, false, false, false, {}
+	
+	local combo = Spring.GetTeamRulesParam(teamID, "rk_unit_combo_" .. index)
+	local mount = (not combo) and Spring.GetTeamRulesParam(teamID, "rk_unit_mount_" .. index)
+	local turret = (not combo) and Spring.GetTeamRulesParam(teamID, "rk_unit_turret_" .. index)
+	local modules = {}
 	local moduleLimit = Spring.GetTeamRulesParam(teamID, "rk_modules_per_unit")
+	
 	for i = 1, moduleLimit do
-		local item = Spring.GetTeamRulesParam(teamID, "rk_unit_module_" .. index .. "_" .. i)
-		local turretCtrl = Button:New {
-			parent = holder,
-			x = ARMY_BUTTON_SIZE + 25 + i*ARMY_BUTTON_SIZE,
-			y = 50,
-			width = ARMY_BUTTON_SIZE,
-			height = ARMY_BUTTON_SIZE,
-			caption = "empty",
-			padding = {0, 0, 0, 0},
-		}
+		modules[i] = Spring.GetTeamRulesParam(teamID, "rk_unit_module_" .. index .. "_" .. i)
+	end
+	
+	local internalFuncs = {}
+	local externalFuncs = {}
+	
+	local function IsItemCompatible(newItem)
+		-- TODO: eg no +damage on constructors, or experience from lasers or laser-weilders.
+		return true
+	end
+	
+	local function UpdateName()
+		if not nameCtrl then
+			return
+		end
+		if turret and mount then
+			nameCtrl:SetText(itemDefs[turret].humanName .. itemDefs[mount].humanName)
+		elseif turret then
+			nameCtrl:SetText(GetShopName(turret))
+		elseif mount then
+			nameCtrl:SetText(GetShopName(mount))
+		elseif combo then
+			nameCtrl:SetText(GetShopName(combo))
+		end
+	end
+	
+	function internalFuncs.AddItem(item, slotType, slotIndex)
+		local added = false
+		if slotType == "turret" and itemDefs[item].isTurret and IsItemCompatible(item) then
+			turret = item
+			added = true
+			UpdateName()
+		elseif slotType == "mount" and itemDefs[item].isMount and IsItemCompatible(item) then
+			mount = item
+			added = true
+			UpdateName()
+		elseif slotType == "combo" and itemDefs[item].isCombo and IsItemCompatible(item) then
+			combo = item
+			added = true
+			UpdateName()
+		elseif slotType == "module" and itemDefs[item].isModule and IsItemCompatible(item) then
+			modules[slotIndex] = item
+			added = true
+		end
+		return added
+	end
+	
+	function internalFuncs.RegisterItemControls(newCombo, newTurret, newMount, newModules)
+		comboCtrl, turretCtrl, mountCtrl, moduleCtrls = newCombo, newTurret, newMount, newModules
+	end
+	
+	function internalFuncs.OnClickEmptySlot(slotCtrl, slotType, slotIndex)
+		if not activeItem then
+			return
+		end
+		if internalFuncs.AddItem(activeItem, slotType, slotIndex) then
+			slotCtrl:SetCaption(GetShopName(activeItem))
+			SetButtonState(slotCtrl, true)
+			SetActiveItem(false)
+		end
+	end
+	
+	if (combo or mount or turret) then
+		InitialiseUnitEntry(holder, internalFuncs, combo, turret, mount, modules)
+	else
+		InitialiseEmptyUnit(holder, internalFuncs)
 	end
 end
 
