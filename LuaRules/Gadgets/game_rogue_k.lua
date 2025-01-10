@@ -63,8 +63,10 @@ end
 
 local function InitPlayerTeam(teamID)
 	Spring.SetTeamRulesParam(teamID, "rk_unit_combo_1", "combo_vehcon")
-	Spring.SetTeamRulesParam(teamID, "rk_unit_limit", 5)
-	Spring.SetTeamRulesParam(teamID, "rk_modules_per_unit", 2)
+	Spring.SetTeamRulesParam(teamID, "rk_perk_1", "perk_unit_limit")
+	Spring.SetTeamRulesParam(teamID, "rk_perk_level_1", 5)
+	Spring.SetTeamRulesParam(teamID, "rk_perk_2", "perk_module_limit")
+	Spring.SetTeamRulesParam(teamID, "rk_perk_level_2", 2)
 end
 
 local function StartNextRound()
@@ -85,7 +87,6 @@ end
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-
 local function NewGame(cmd, line, words, player)
 	Spring.SetGameRulesParam("rk_preGame", 0)
 	for i = 1, #playerTeamList do
@@ -95,13 +96,28 @@ local function NewGame(cmd, line, words, player)
 	StartNextRound()
 end
 
+local function SendUnitSpec(cmd, line, words, player)
+	Spring.Echo(cmd)
+	Spring.Echo(line)
+	Spring.Echo(words)
+	Spring.Echo(player)
+	--msg = Spring.Utilities.ExplodeString('|', msg)
+end
+
+
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
 function gadget:Initialize()
 	Spring.SetGameRulesParam("rk_preGame", 1)
 	Spring.SetGameRulesParam("rk_round_number", 0)
 	Spring.SetGameRulesParam("rk_in_shop", 0)
-	
 	Spring.SetGameRulesParam("is_mod_mission", 1)
+	
 	gadgetHandler:AddChatAction("rk_new_game", NewGame)
+	gadgetHandler:AddChatAction("rk_send_unit_spec", SendUnitSpec)
+	gadgetHandler:AddChatAction("rk_send_perk_spec", SendPerkSpec)
 end
 
 --------------------------------------------------------------------------------

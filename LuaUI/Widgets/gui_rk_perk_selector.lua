@@ -53,7 +53,11 @@ local inventoryWidth = 7
 local inventoryHeight = 2
 
 local ARMY_BUTTON_SIZE = 65
+local INV_BUTTON_SIZE = 80
 
+local FONT_LARGE = 32
+local FONT_MED = 18
+local FONT_SMALL = 14
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
@@ -62,6 +66,9 @@ local mainWindow = false
 local activeButton = false
 local activeItem = false
 local armyFunctions = false
+local perkFunctions = false
+local wantFullReset = false
+local wantContinueToNextRound = false
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -135,6 +142,27 @@ end
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
+local function MakeModuleEntry(holder, i, item)
+	local moduleCtrl = Button:New {
+		parent = holder,
+		x = ARMY_BUTTON_SIZE + 45 + i*ARMY_BUTTON_SIZE,
+		y = 50,
+		width = ARMY_BUTTON_SIZE,
+		height = ARMY_BUTTON_SIZE,
+		caption = "empty",
+		padding = {0, 0, 0, 0},
+	}
+	if item then
+		moduleCtrl:SetCaption(GetShopName(item))
+		unitFuncs.AddItem(item, "module", i)
+	else
+		moduleCtrl.OnClick = {function (self)
+			unitFuncs.OnClickEmptySlot(self, "module", i)
+		end}
+	end
+	return moduleCtrl
+end
+
 local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modules)
 	local teamID = Spring.GetMyTeamID()
 	local comboCtrl, turretCtrl, mountCtrl = false, false, false
@@ -142,7 +170,7 @@ local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modu
 		local comboName = itemDefs[combo].humanName
 		comboCtrl = Button:New {
 			parent = holder,
-			x = 5,
+			x = 25,
 			y = 50,
 			width = ARMY_BUTTON_SIZE,
 			height = ARMY_BUTTON_SIZE,
@@ -154,7 +182,7 @@ local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modu
 	else
 		turretCtrl = Button:New {
 			parent = holder,
-			x = 5,
+			x = 25,
 			y = 50,
 			width = ARMY_BUTTON_SIZE,
 			height = ARMY_BUTTON_SIZE,
@@ -163,7 +191,7 @@ local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modu
 		}
 		mountCtrl = Button:New {
 			parent = holder,
-			x = ARMY_BUTTON_SIZE + 5,
+			x = ARMY_BUTTON_SIZE + 25,
 			y = 50,
 			width = ARMY_BUTTON_SIZE,
 			height = ARMY_BUTTON_SIZE,
@@ -172,7 +200,6 @@ local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modu
 		}
 		if turret then
 			turretCtrl:SetCaption(GetShopName(turret))
-			SetButtonState(turretCtrl, true)
 			unitFuncs.AddItem(turret, "turret")
 		else
 			turretCtrl.OnClick = {function (self)
@@ -181,7 +208,6 @@ local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modu
 		end
 		if mount then
 			mountCtrl:SetCaption(GetShopName(mount))
-			SetButtonState(mountCtrl, true)
 			unitFuncs.AddItem(mount, "mount")
 		else
 			mountCtrl.OnClick = {function (self)
@@ -191,28 +217,9 @@ local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modu
 	end
 	
 	local moduleCtrls = {}
-	local moduleLimit = Spring.GetTeamRulesParam(teamID, "rk_modules_per_unit")
-	for i = 1, moduleLimit do
+	for i = 1, perkFunctions.GetModuleLimit() do
 		local item = modules and modules[i]
-		local moduleCtrl = Button:New {
-			parent = holder,
-			x = ARMY_BUTTON_SIZE + 25 + i*ARMY_BUTTON_SIZE,
-			y = 50,
-			width = ARMY_BUTTON_SIZE,
-			height = ARMY_BUTTON_SIZE,
-			caption = "empty",
-			padding = {0, 0, 0, 0},
-		}
-		moduleCtrls[i] = moduleCtrl
-		if item then
-			moduleCtrl:SetCaption(GetShopName(item))
-			SetButtonState(moduleCtrl, true)
-			unitFuncs.AddItem(item, "module", i)
-		else
-			moduleCtrl.OnClick = {function (self)
-				unitFuncs.OnClickEmptySlot(self, "module", i)
-			end}
-		end
+		moduleCtrls[i] = MakeModuleEntry(holder, i, item)
 	end
 	
 	unitFuncs.RegisterItemControls(comboCtrl, turretCtrl, mountCtrl, moduleCtrls)
@@ -244,7 +251,7 @@ local function InitialiseEmptyUnit(holder, unitFuncs)
 		y = 25,
 		right = 25,
 		bottom = 25,
-		font = WG.GetFont(32),
+		font = {size = FONT_MED},
 		caption = "New unit: Place a turret, chassis or all-in-one here.",
 		OnClick = {function (self)
 			ClickMakeUnit()
@@ -279,9 +286,8 @@ local function GetUnitEntry(parent, index)
 	local mount = (not combo) and Spring.GetTeamRulesParam(teamID, "rk_unit_mount_" .. index)
 	local turret = (not combo) and Spring.GetTeamRulesParam(teamID, "rk_unit_turret_" .. index)
 	local modules = {}
-	local moduleLimit = Spring.GetTeamRulesParam(teamID, "rk_modules_per_unit")
 	
-	for i = 1, moduleLimit do
+	for i = 1, perkFunctions.GetModuleLimit() do
 		modules[i] = Spring.GetTeamRulesParam(teamID, "rk_unit_module_" .. index .. "_" .. i)
 	end
 	
@@ -339,7 +345,6 @@ local function GetUnitEntry(parent, index)
 		end
 		if internalFuncs.AddItem(activeItem, slotType, slotIndex) then
 			slotCtrl:SetCaption(GetShopName(activeItem))
-			SetButtonState(slotCtrl, true)
 			SetActiveItem(false)
 		end
 	end
@@ -349,6 +354,43 @@ local function GetUnitEntry(parent, index)
 	else
 		InitialiseEmptyUnit(holder, internalFuncs)
 	end
+	
+	function externalFuncs.NotifyUnitPerkUpdate(item)
+		if item == "perk_module_limit" then
+			if moduleCtrls then
+				for i = 1, perkFunctions.GetModuleLimit() do
+					if not moduleCtrls[i] then
+						moduleCtrls[i] = MakeModuleEntry(holder, i, false)
+					end
+				end
+			end
+		end
+	end
+	
+	function externalFuncs.Serialize()
+		if not (combo or turret or mount) then
+			return false
+		end
+		local unitStr = ""
+		if combo then
+			unitStr = unitStr .. "combo|" .. combo .. "|"
+		end
+		if turret then
+			unitStr = unitStr .. "turret|" .. turret .. "|"
+		end
+		if mount then
+			unitStr = unitStr .. "mount|" .. mount .. "|"
+		end
+		unitStr = unitStr .. "modules"
+		for i = 1, moduleLimit do
+			if modules[i] then
+				unitStr = "|" .. modules[i]
+			end
+		end
+		return unitStr
+	end
+	
+	return externalFuncs
 end
 
 local function GetArmyWindow(parent)
@@ -394,10 +436,10 @@ local function GetArmyWindow(parent)
 			local button = Button:New {
 				buttonType = "inventory",
 				buttonIndex = myIndex,
-				x = i*80 - 30,
-				bottom = (inventoryHeight - j)*80 + 64,
-				width = 80,
-				height = 80,
+				x = i*INV_BUTTON_SIZE - 30,
+				bottom = (inventoryHeight - j)*INV_BUTTON_SIZE + 64,
+				width = INV_BUTTON_SIZE,
+				height = INV_BUTTON_SIZE,
 				caption = GetShopName(item),
 				padding = {0, 0, 0, 0},
 				parent = window,
@@ -426,7 +468,7 @@ local function GetArmyWindow(parent)
 	}
 	
 	local units = {}
-	for i = 1, Spring.GetTeamRulesParam(teamID, "rk_unit_limit") do
+	for i = 1, perkFunctions.GetUnitLimit() do
 		units[i] = GetUnitEntry(unitPanel, i)
 	end
 	
@@ -442,35 +484,165 @@ local function GetArmyWindow(parent)
 		end
 	end
 	
+	function externalFuncs.NotifyArmyPerkUpdate(item)
+		if item == "perk_unit_limit" then
+			for i = 1, perkFunctions.GetUnitLimit() do
+				if not units[i] then
+					units[i] = GetUnitEntry(unitPanel, i)
+				end
+			end
+		elseif item == "perk_module_limit" then
+			for i = 1, perkFunctions.GetUnitLimit() do
+				units[i].NotifyUnitPerkUpdate(item)
+			end
+		end
+	end
+	
+	function externalFuncs.SerializeUnits(item)
+		local serialized = {}
+		for i = 1, #units do
+			serialized[i] = units[i].Serialize()
+		end
+		return serialized
+	end
+	
 	return externalFuncs
 end
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-local function GetBuyWindow(parent, armyFunctions)
+local function GetPerkWindow(parent)
+	local teamID = Spring.GetMyTeamID()
+	local perkPanel = ScrollPanel:New {
+		parent = parent,
+		x = 10,
+		y = 10,
+		right = 10,
+		bottom = 10,
+		padding = { 4, 4, 4, 4 },
+		scrollbarSize = 6,
+		horizontalScrollbar = true,
+	}
+	
+	local perks = {}
+	local perkButtons = {}
+	local perkLevel = {}
+	
+	local cachedParameters = {}
+	local externalFuncs = {}
+	
+	local function UpdateCache(item)
+		if item == "perk_unit_limit" then
+			cachedParameters.unitLimit = perkLevel[item]
+		elseif item == "perk_module_limit" then
+			cachedParameters.moduleLimit = perkLevel[item]
+		end
+	end
+	
+	function externalFuncs.AddPerk(item, levels)
+		if not perkLevel[item] then
+			local px = #perks % 3
+			local py = (#perks - px) / 3
+			local button = Button:New {
+				parent = perkPanel,
+				x = px*INV_BUTTON_SIZE + 8,
+				y = py*INV_BUTTON_SIZE + 8,
+				width = INV_BUTTON_SIZE,
+				height = INV_BUTTON_SIZE,
+				caption = GetShopName(item),
+				padding = {0, 0, 0, 0},
+			}
+			perks[#perks + 1] = item
+			perkButtons[item] = button
+		end
+		perkLevel[item] = (perkLevel[item] or 0) + (levels or 1)
+		UpdateCache(item)
+		if armyFunctions then
+			armyFunctions.NotifyArmyPerkUpdate(item)
+		end
+	end
+	
+	local index = 1
+	while index do
+		local perk = Spring.GetTeamRulesParam(teamID, "rk_perk_" .. index)
+		if perk then
+			local level = Spring.GetTeamRulesParam(teamID, "rk_perk_level_" .. index) or 1
+			externalFuncs.AddPerk(perk, level)
+			index = index + 1
+		else
+			index = false
+		end
+	end
+	
+	function externalFuncs.GetUnitLimit()
+		return cachedParameters.unitLimit or 1
+	end
+	
+	function externalFuncs.GetModuleLimit()
+		return cachedParameters.moduleLimit or 1
+	end
+	
+	return externalFuncs
+end
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+local function GetBuyWindow(parent)
 	local screenWidth, screenHeight = Spring.GetViewGeometry()
 	local teamID = Spring.GetMyTeamID()
 	local window = Window:New{
 		parent = parent,
-		width = "43%",
-		height = "80%",
+		width = "50%",
+		height = "90%",
 		classname = "main_window_small",
 		x = "5%",
-		y = "10%",
+		y = "5%",
 		dockable = false,
 		draggable = false,
 		resizable = false,
 		tweakDraggable = true,
 		tweakResizable = false,
+	}
+	local perkHolder = Control:New{
+		parent = window,
+		x = "70%",
+		y = 5,
+		right = 5,
+		bottom = "45%",
 		padding = {0, 0, 0, 0},
 	}
+	perkFunctions = GetPerkWindow(perkHolder)
 	
 	local shopWidth = Spring.GetGameRulesParam("rk_shop_width")
 	local shopHeight = Spring.GetGameRulesParam("rk_shop_height")
 	local buttons = {}
 	local shopItems = {}
 	local selectionMade = false
+	
+	local resetButton = Button:New {
+		parent = window,
+		x = 15,
+		bottom = 15,
+		width = INV_BUTTON_SIZE*2.5,
+		height = INV_BUTTON_SIZE,
+		caption = "Reset",
+		font = {size = FONT_LARGE},
+		padding = {0, 0, 0, 0},
+	}
+	local doneButton = Button:New {
+		parent = window,
+		right = 15,
+		bottom = 15,
+		width = INV_BUTTON_SIZE*2.5,
+		height = INV_BUTTON_SIZE,
+		caption = "Continue",
+		font = {size = FONT_LARGE},
+		padding = {0, 0, 0, 0},
+	}
+	SetButtonState(doneButton, true)
+	SetButtonState(resetButton, true)
 	
 	local inHighlightButton = false
 	local function HighlightButton(x, y)
@@ -494,6 +666,15 @@ local function GetBuyWindow(parent, armyFunctions)
 			return
 		end
 		selectionMade = true
+		SetButtonState(doneButton, false)
+		SetButtonState(resetButton, false)
+		doneButton.OnClick = {function (self)
+			wantContinueToNextRound = true
+		end}
+		resetButton.OnClick = {function (self)
+			wantFullReset = true
+		end}
+		
 		for i = 1, shopWidth do
 			for j = 1, shopHeight do
 				local button = buttons[i][j]
@@ -538,6 +719,7 @@ local function GetBuyWindow(parent, armyFunctions)
 			shopItems[i][j] = shopItem
 		end
 	end
+	
 end
 
 --------------------------------------------------------------------------------
@@ -545,8 +727,8 @@ end
 
 local function AddMenuButtons(parent)
 	local button = Button:New {
-		x = 125,
-		y = 25,
+		x = 225,
+		y = 5,
 		width = 70,
 		height = 40,
 		caption = "Restart",
@@ -567,8 +749,8 @@ local function AddMenuButtons(parent)
 	end
 	
 	local button = Button:New {
-		x = 45,
-		y = 25,
+		x = 145,
+		y = 5,
 		width = 70,
 		height = 40,
 		caption = "Quit",
@@ -582,7 +764,6 @@ end
 
 local function SetupWindow()
 	local screenWidth, screenHeight = Spring.GetViewGeometry()
-	
 	local newMainWindow = Window:New{
 		--parent = screen0,
 		name  = 'rk_perk_window',
@@ -600,8 +781,8 @@ local function SetupWindow()
 		padding = {0, 0, 0, 0},
 	}
 	AddMenuButtons(newMainWindow)
-	armyFunctions = GetArmyWindow(newMainWindow)
 	GetBuyWindow(newMainWindow, armyFunctions)
+	armyFunctions = GetArmyWindow(newMainWindow)
 	
 	return newMainWindow
 end
@@ -609,7 +790,37 @@ end
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
+local function SendFactionSpec()
+	local units = armyFunctions.SerializeUnits()
+	for i = 1, #units do
+		if units[i] then
+			Spring.SendCommands("luarules rk_send_unit_spec " .. i .. " " .. units[i])
+		end
+	end
+end
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
 function widget:Update()
+	local newShopOpen = (Spring.GetGameRulesParam("rk_in_shop") == 1)
+	if wantFullReset and newShopOpen then
+		wantFullReset = false
+		mainWindow:Dispose()
+		mainWindow = SetupWindow()
+		screen0:AddChild(mainWindow)
+	end
+	if wantContinueToNextRound then
+		if oldShopOpen and mainWindow then
+			SendFactionSpec()
+			oldShopOpen = false
+			windowVisible = false
+			screen0:RemoveChild(mainWindow)
+			WG.SetMinimapVisibility(true)
+		end
+		return
+	end
+	
 	if mainWindow and windowVisible then
 		mainWindow:BringToFront()
 		if activeButton then
@@ -618,7 +829,7 @@ function widget:Update()
 			activeButton:BringToFront()
 		end
 	end
-	local newShopOpen = (Spring.GetGameRulesParam("rk_in_shop") == 1)
+	
 	if newShopOpen == oldShopOpen then
 		return
 	end
@@ -663,4 +874,5 @@ function widget:Initialize()
 	Control = Chili.Control
 	ScrollPanel = Chili.ScrollPanel
 	screen0 = Chili.Screen0
+	
 end

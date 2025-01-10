@@ -24,6 +24,11 @@ local modules = {
 	"module_health",
 }
 
+local perks = {
+	"perk_unit_limit",
+	"perk_module_limit",
+}
+
 local itemLists = {
 	turrets = turrets,
 	mounts = mounts,
@@ -95,6 +100,15 @@ local defs = {
 	module_health = {
 		isModule = true,
 		humanName = "+Health",
+	},
+	
+	perk_unit_limit = {
+		isPerk = true,
+		humanName = "+Units",
+	},
+	perk_module_limit = {
+		isPerk = true,
+		humanName = "+Modules",
 	},
 }
 
