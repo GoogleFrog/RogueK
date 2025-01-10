@@ -367,7 +367,7 @@ local function GetUnitEntry(parent, index)
 		end
 	end
 	
-	function externalFuncs.Serialize()
+	function externalFuncs.Serialise()
 		if not (combo or turret or mount) then
 			return false
 		end
@@ -498,12 +498,12 @@ local function GetArmyWindow(parent)
 		end
 	end
 	
-	function externalFuncs.SerializeUnits(item)
-		local serialized = {}
+	function externalFuncs.SerialiseUnits(item)
+		local serialised = {}
 		for i = 1, #units do
-			serialized[i] = units[i].Serialize()
+			serialised[i] = units[i].Serialise()
 		end
-		return serialized
+		return serialised
 	end
 	
 	return externalFuncs
@@ -791,7 +791,7 @@ end
 --------------------------------------------------------------------------------
 
 local function SendFactionSpec()
-	local units = armyFunctions.SerializeUnits()
+	local units = armyFunctions.SerialiseUnits()
 	for i = 1, #units do
 		if units[i] then
 			Spring.SendCommands("luarules rk_send_unit_spec " .. i .. " " .. units[i])
