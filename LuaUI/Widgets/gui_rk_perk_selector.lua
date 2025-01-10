@@ -49,8 +49,8 @@ local BUTTON_COLOR
 local BUTTON_FOCUS_COLOR
 local BUTTON_BORDER_COLOR
 
-local inventoryWidth = 7
-local inventoryHeight = 2
+local INV_WIDTH = 7
+local INV_HEIGHT_BASE = 2
 
 local ARMY_BUTTON_SIZE = 65
 local INV_BUTTON_SIZE = 80
@@ -393,6 +393,27 @@ local function GetUnitEntry(parent, index)
 	return externalFuncs
 end
 
+local function AddInventoryButton(holder, teamID, item, gx, gy, index, ClickFunc)
+	local button = Button:New {
+		parent = holder,
+		buttonType = "inventory",
+		buttonIndex = index,
+		x = gx*INV_BUTTON_SIZE - 55,
+		y = gy*INV_BUTTON_SIZE - 60,
+		width = INV_BUTTON_SIZE,
+		height = INV_BUTTON_SIZE,
+		caption = GetShopName(item),
+		padding = {0, 0, 0, 0},
+		OnClick = {function (self)
+			ClickFunc(index)
+		end},
+	}
+	if not item then
+		SetButtonState(button, true)
+	end
+	return button
+end
+
 local function GetArmyWindow(parent)
 	local screenWidth, screenHeight = Spring.GetViewGeometry()
 	local teamID = Spring.GetMyTeamID()
@@ -410,8 +431,29 @@ local function GetArmyWindow(parent)
 		tweakResizable = false,
 		padding = {0, 0, 0, 0},
 	}
-	local invButtons = {}
 	local inventory = {}
+	local invButtons = {}
+	local inventoryHeight = INV_HEIGHT_BASE
+	
+	local inventoryHolder = Control:New {
+		parent = window,
+		x = 0,
+		y = "70%",
+		right = 0,
+		bottom = 0,
+		padding = { 0, 0, 0, 0 },
+	}
+	local inventoryPanel = ScrollPanel:New {
+		parent = inventoryHolder,
+		x = 25,
+		y = 25,
+		right = 25,
+		bottom = 25,
+		padding = { 4, 4, 4, 4 },
+		borderColor = {0, 0, 0, 0},
+		scrollbarSize = 6,
+		horizontalScrollbar = true,
+	}
 	
 	local function ClickInventoryButtion(index)
 		if activeItem then
@@ -428,31 +470,13 @@ local function GetArmyWindow(parent)
 		end
 	end
 	
-	local index = 1
+	local invIndex = 1
 	for j = 1, inventoryHeight do
-		for i = 1, inventoryWidth do
-			local item = Spring.GetTeamRulesParam(teamID, "rk_inv_item_" .. index)
-			local myIndex = index
-			local button = Button:New {
-				buttonType = "inventory",
-				buttonIndex = myIndex,
-				x = i*INV_BUTTON_SIZE - 30,
-				bottom = (inventoryHeight - j)*INV_BUTTON_SIZE + 64,
-				width = INV_BUTTON_SIZE,
-				height = INV_BUTTON_SIZE,
-				caption = GetShopName(item),
-				padding = {0, 0, 0, 0},
-				parent = window,
-				OnClick = {function (self)
-					ClickInventoryButtion(myIndex)
-				end},
-			}
-			if not item then
-				SetButtonState(button, true)
-			end
-			inventory[index] = item or false
-			invButtons[index] = button
-			index = index + 1
+		for i = 1, INV_WIDTH do
+			local item = Spring.GetTeamRulesParam(teamID, "rk_inv_item_" .. invIndex) or false
+			invButtons[invIndex] = AddInventoryButton(inventoryPanel, teamID, item, i, j, invIndex, ClickInventoryButtion)
+			inventory[invIndex] = item
+			invIndex = invIndex + 1
 		end
 	end
 	
@@ -474,13 +498,21 @@ local function GetArmyWindow(parent)
 	
 	local externalFuncs = {}
 	function externalFuncs.AddToInventory(item)
+		Spring.Echo("inventory", inventory, #inventory)
 		for i = 1, #inventory do
 			if not inventory[i] then
 				inventory[i] = item
 				invButtons[i].caption = GetShopName(item)
 				SetButtonState(invButtons[i], false)
-				break
+				return
 			end
+		end
+		inventoryHeight = inventoryHeight + 1
+		for i = 1, INV_WIDTH do
+			local toAdd = (i == 1) and item
+			invButtons[invIndex] = AddInventoryButton(inventoryPanel, teamID, toAdd, i, inventoryHeight, invIndex, ClickInventoryButtion)
+			inventory[invIndex] = toAdd
+			invIndex = invIndex + 1
 		end
 	end
 	
