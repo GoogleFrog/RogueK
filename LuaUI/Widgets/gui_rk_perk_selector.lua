@@ -37,6 +37,8 @@ local screen0
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
+local itemDefs, itemLists = VFS.Include("LuaRules/Configs/rk_item_defs.lua")
+
 local SELECT_BUTTON_COLOR = {0.98, 0.48, 0.26, 0.85}
 local SELECT_BUTTON_FOCUS_COLOR = {0.98, 0.48, 0.26, 0.85}
 local BUTTON_DISABLE_COLOR = {0.1, 0.1, 0.1, 0.85}
@@ -59,6 +61,7 @@ local oldShopOpen = false
 local mainWindow = false
 local activeButton = false
 local activeItem = false
+local armyFunctions = false
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -115,6 +118,20 @@ local function SetActiveItem(newItem)
 	activeButton:BringToFront()
 end
 
+local function GetShopName(shopItem)
+	if not shopItem then
+		return ""
+	end
+	local def = itemDefs[shopItem]
+	local shopName = def.humanName
+	if def.isTurret then
+		shopName = shopName .. '-'
+	elseif def.isMount then
+		shopName = '-' .. shopName
+	end
+	return shopName
+end
+
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
@@ -150,18 +167,18 @@ local function GetUnitEntry(parent, index)
 	
 	local unitName = false
 	if comboUnit then
+		local comboName = itemDefs[comboUnit].humanName
 		local comboCtrl = Button:New {
 			parent = holder,
 			x = 5,
 			y = 50,
 			width = ARMY_BUTTON_SIZE,
 			height = ARMY_BUTTON_SIZE,
-			caption = "comboUnit",
+			caption = comboName,
 			padding = {0, 0, 0, 0},
 		}
 		SetButtonState(comboCtrl, true)
-		comboCtrl:SetCaption("bla")
-		unitName = "Bla"
+		unitName = comboName
 	else
 		local mountCtrl = Button:New {
 			parent = holder,
@@ -182,16 +199,19 @@ local function GetUnitEntry(parent, index)
 			padding = {0, 0, 0, 0},
 		}
 		if mount then
-			mountCtrl:SetCaption("bla")
+			mountCtrl:SetCaption(GetShopName(mount))
+			unitName = itemDefs[mount].humanName
 		else
 			SetButtonState(mountCtrl, true)
+			unitName = "-"
 		end
 		if turret then
-			turretCtrl:SetCaption("bla")
+			turretCtrl:SetCaption(GetShopName(turret))
+			unitName = itemDefs[turret].humanName .. unitName
 		else
 			SetButtonState(turretCtrl, true)
+			unitName = "-" .. unitName
 		end
-		unitName = "Bla"
 	end
 	
 	local unitNameBox = TextBox:New {
@@ -242,12 +262,12 @@ local function GetArmyWindow(parent)
 	local function ClickInventoryButtion(index)
 		if activeItem then
 			local newItem = inventory[index]
-			invButtons[index].caption = activeItem
+			invButtons[index].caption = GetShopName(activeItem)
 			inventory[index] = activeItem
 			SetButtonState(invButtons[index], false)
 			SetActiveItem(newItem)
 		elseif inventory[index] then
-			invButtons[index].caption = ""
+			invButtons[index].caption = GetShopName(false)
 			SetButtonState(invButtons[index], true)
 			SetActiveItem(inventory[index])
 			inventory[index] = false
@@ -266,7 +286,7 @@ local function GetArmyWindow(parent)
 				bottom = (inventoryHeight - j)*80 + 64,
 				width = 80,
 				height = 80,
-				caption = item or "",
+				caption = GetShopName(item),
 				padding = {0, 0, 0, 0},
 				parent = window,
 				OnClick = {function (self)
@@ -303,7 +323,7 @@ local function GetArmyWindow(parent)
 		for i = 1, #inventory do
 			if not inventory[i] then
 				inventory[i] = item
-				invButtons[i].caption = item
+				invButtons[i].caption = GetShopName(item)
 				SetButtonState(invButtons[i], false)
 				break
 			end
@@ -384,7 +404,7 @@ local function GetBuyWindow(parent, armyFunctions)
 				y = j*80,
 				width = 80,
 				height = 80,
-				caption = shopItem,
+				caption = GetShopName(shopItem),
 				padding = {0, 0, 0, 0},
 				parent = window,
 				preserveChildrenOrder = true,
@@ -468,11 +488,14 @@ local function SetupWindow()
 		padding = {0, 0, 0, 0},
 	}
 	AddMenuButtons(newMainWindow)
-	local armyFunctions = GetArmyWindow(newMainWindow)
+	armyFunctions = GetArmyWindow(newMainWindow)
 	GetBuyWindow(newMainWindow, armyFunctions)
 	
 	return newMainWindow
 end
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
 function widget:Update()
 	if mainWindow and windowVisible then
@@ -501,6 +524,13 @@ function widget:Update()
 		windowVisible = false
 		screen0:RemoveChild(mainWindow)
 		WG.SetMinimapVisibility(true)
+	end
+end
+
+function widget:MousePress(x, y, button)
+	if button == 3 and activeItem and armyFunctions then
+		armyFunctions.AddToInventory(activeItem)
+		SetActiveItem(false)
 	end
 end
 

@@ -1,28 +1,5 @@
-
-local turrets = {
-	"turret_glaive",
-	"turret_pyro",
-	"turret_knight",
-	"turret_ravager",
-}
-
-local mounts = {
-	"mount_glaive",
-	"mount_pyro",
-	"mount_knight",
-	"mount_ravager",
-}
-
-local combos = {
-	"combo_mason",
-}
-
-local modules = {
-	"base_damage",
-	"base_range",
-	"base_speed",
-	"base_health",
-}
+local CopyTable = Spring.Utilities.CopyTable
+local itemDefs, itemLists = VFS.Include("LuaRules/Configs/rk_item_defs.lua")
 
 local roundDefs = {
 	{
@@ -48,10 +25,10 @@ local roundDefs = {
 local defs = {
 	rounds = roundDefs,
 	perks = {
-		turrets = turrets,
-		mounts = mounts,
-		modules = modules,
-		combos = combos,
+		turrets = CopyTable(itemLists.turrets),
+		mounts  = CopyTable(itemLists.mounts),
+		modules = CopyTable(itemLists.modules),
+		combos  = CopyTable(itemLists.combos),
 	},
 }
 

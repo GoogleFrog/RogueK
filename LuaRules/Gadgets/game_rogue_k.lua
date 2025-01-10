@@ -53,7 +53,6 @@ local function SetupTeamShop(teamID, roundDef)
 		for j = 1, roundDef.shopSize[2] do
 			if roundDef.prescribeShop then
 				local name = roundDef.prescribeShop[index]
-				Spring.Echo("name", i, j, name)
 				perkCount[name] = (perkCount[name] or 0) + 1
 				Spring.SetTeamRulesParam(teamID, "rk_shop_item_" .. i .. "_" .. j, perks[name][perkCount[name]])
 			end
@@ -63,7 +62,7 @@ local function SetupTeamShop(teamID, roundDef)
 end
 
 local function InitPlayerTeam(teamID)
-	Spring.SetTeamRulesParam(teamID, "rk_unit_combo_1", "combo_mason")
+	Spring.SetTeamRulesParam(teamID, "rk_unit_combo_1", "combo_vehcon")
 	Spring.SetTeamRulesParam(teamID, "rk_unit_limit", 5)
 	Spring.SetTeamRulesParam(teamID, "rk_modules_per_unit", 2)
 end
