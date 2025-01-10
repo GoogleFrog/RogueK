@@ -142,7 +142,7 @@ end
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-local function MakeModuleEntry(holder, i, item)
+local function MakeModuleEntry(holder, i, item, unitFuncs)
 	local moduleCtrl = Button:New {
 		parent = holder,
 		x = ARMY_BUTTON_SIZE + 45 + i*ARMY_BUTTON_SIZE,
@@ -219,7 +219,7 @@ local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modu
 	local moduleCtrls = {}
 	for i = 1, perkFunctions.GetModuleLimit() do
 		local item = modules and modules[i]
-		moduleCtrls[i] = MakeModuleEntry(holder, i, item)
+		moduleCtrls[i] = MakeModuleEntry(holder, i, item, unitFuncs)
 	end
 	
 	unitFuncs.RegisterItemControls(comboCtrl, turretCtrl, mountCtrl, moduleCtrls)
@@ -360,7 +360,7 @@ local function GetUnitEntry(parent, index)
 			if moduleCtrls then
 				for i = 1, perkFunctions.GetModuleLimit() do
 					if not moduleCtrls[i] then
-						moduleCtrls[i] = MakeModuleEntry(holder, i, false)
+						moduleCtrls[i] = MakeModuleEntry(holder, i, false, internalFuncs)
 					end
 				end
 			end
