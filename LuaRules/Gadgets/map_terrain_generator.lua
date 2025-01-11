@@ -24,14 +24,24 @@ local DO_SMOOTHING = true
 local DISABLE_TERRAIN_GENERATOR = false
 local RELOAD_REGEN = false
 
-local DRAW_EDGES = true
+local DRAW_EDGES = false
 local PRINT_MEX_ALLOC = false
-local PRINT_TIERS = true
+local PRINT_TIERS = false
 local PRINT_CURVES = false
 local SHOW_WAVEMAP = false
 local TIME_MAP_GEN = false
 
 local SYMMETRY = false
+
+-- Can be set by GG.GenerateNewMap
+local useMapArea = 1
+
+local mapLeft   = 0
+local mapTop    = 0
+local mapRight  = MAP_X
+local mapBot    = MAP_Z
+local mapWidth  = MAP_X
+local mapHeight = MAP_Z
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -145,8 +155,8 @@ local textureCounts = {
 -- Heightmap manipulation
 
 local function FlattenMap(height)
-	for x = 0, MAP_X, SQUARE_SIZE do
-		for z = 0, MAP_Z, SQUARE_SIZE do
+	for x = mapLeft, mapRight, SQUARE_SIZE do
+		for z = mapTop, mapBot, SQUARE_SIZE do
 			spSetHeightMap(x, z, height)
 		end
 		Spring.ClearWatchDogTimer()
@@ -372,15 +382,15 @@ end
 local function DistanceToEdge(point)
 	if point[1] < point[2] then
 		if point[1] + point[2] < MAP_Z then
-			return point[1]
+			return point[1] - mapTop
 		else
-			return MAP_Z - point[2]
+			return MAP_Z - point[2] - mapTop
 		end
 	else
 		if point[1] + point[2] < MAP_X then
-			return point[2]
+			return point[2] - mapTop
 		else
-			return MAP_X - point[1]
+			return MAP_X - point[1] - mapTop
 		end
 	end
 end
@@ -394,30 +404,30 @@ end
 local function PutPointInMap(point, edgeBuffer)
 	point = {point[1], point[2]}
 	local changed = false
-	if point[1] < edgeBuffer then
-		point[1] = edgeBuffer + (edgeBuffer - point[1])
-	elseif point[1] > MAP_X - edgeBuffer then
-		point[1] = MAP_X - edgeBuffer - (point[1] - (MAP_X - edgeBuffer))
+	if point[1] < mapLeft + edgeBuffer then
+		point[1] = mapLeft + edgeBuffer + (mapLeft + edgeBuffer - point[1])
+	elseif point[1] > mapRight - edgeBuffer then
+		point[1] = mapRight - edgeBuffer - (point[1] - (mapRight - edgeBuffer))
 	end
 	
-	if point[2] < edgeBuffer then
-		point[2] = edgeBuffer + (edgeBuffer - point[2])
-	elseif point[2] > MAP_Z - edgeBuffer then
-		point[2] = MAP_Z - edgeBuffer
+	if point[2] < mapTop + edgeBuffer then
+		point[2] = mapTop + edgeBuffer + (mapTop + edgeBuffer - point[2])
+	elseif point[2] > mapBot - edgeBuffer then
+		point[2] = mapBot - edgeBuffer - (point[2] - (mapBot - edgeBuffer))
 	end
 	
 	-- Safety to ensure the point is always within the map.
 	if changed then
-		if point[1] < edgeBuffer then
-			point[1] = edgeBuffer
-		elseif point[1] > MAP_X - edgeBuffer then
-			point[1] = MAP_X - edgeBuffer
+		if point[1] < mapLeft + edgeBuffer then
+			point[1] = mapLeft + edgeBuffer
+		elseif point[1] > mapRight - edgeBuffer then
+			point[1] = mapRight - edgeBuffer
 		end
 		
-		if point[2] < edgeBuffer then
-			point[2] = edgeBuffer
-		elseif point[2] > MAP_Z - edgeBuffer then
-			point[2] = MAP_Z - edgeBuffer - (point[2] - (MAP_Z - edgeBuffer))
+		if point[2] < mapTop + edgeBuffer then
+			point[2] = mapTop + edgeBuffer
+		elseif point[2] > mapBot - edgeBuffer then
+			point[2] = mapBot - edgeBuffer
 		end
 	end
 	return point
@@ -514,7 +524,7 @@ end
 
 local function GetRandomCoordWithEdgeBias(edgeBias)
 	if (edgeBias or 1) == 1 then
-		return {random()*MAP_X, random()*MAP_Z}
+		return {mapLeft + random()*mapWidth, mapTop + random()*mapHeight}
 	end
 	
 	local distToEdge = 0.5*(1 - sqrt(random()))^edgeBias
@@ -522,13 +532,13 @@ local function GetRandomCoordWithEdgeBias(edgeBias)
 	local pos = random()
 	
 	if pos < 0.25 then
-		return {(distToEdge + sideLength*random())*MAP_X, distToEdge*MAP_Z}
+		return {mapLeft + (distToEdge + sideLength*random())*mapWidth, mapTop + distToEdge*mapHeight}
 	elseif pos < 0.5 then
-		return {distToEdge*MAP_X, (distToEdge + sideLength*random())*MAP_Z}
+		return {mapLeft + distToEdge*mapWidth, mapTop + (distToEdge + sideLength*random())*mapHeight}
 	elseif pos < 0.75 then
-		return {(distToEdge + sideLength*random())*MAP_X, (sideLength + distToEdge)*MAP_Z}
+		return {mapLeft + (distToEdge + sideLength*random())*mapWidth, mapTop + (sideLength + distToEdge)*mapHeight}
 	else
-		return {(sideLength + distToEdge)*MAP_X, (distToEdge + sideLength*random())*MAP_Z}
+		return {mapLeft + (sideLength + distToEdge)*mapWidth, mapTop + (distToEdge + sideLength*random())*mapHeight}
 	end
 end
 
@@ -617,7 +627,7 @@ local function GetBoundedLineIntersection(line1, line2)
 end
 
 local function InMapBounds(point)
-	return not (point[1] < 0 or point[2] < 0 or point[1] > MAP_X or point[2] > MAP_Z)
+	return not (point[1] < mapLeft or point[2] < mapTop or point[1] > mapRight or point[2] > mapBot)
 end
 
 local function GetPosIndex(x, z)
@@ -704,17 +714,17 @@ end
 
 local function GetHeight(heights, pos)
 	local x, z = pos[1], pos[2]
-	if x < 0 then
-		x = 0
+	if x < mapLeft then
+		x = mapLeft
 	end
-	if x > MAP_X then
-		x = MAP_X
+	if x > mapRight then
+		x = mapRight
 	end
-	if z < 0 then
-		z = 0
+	if z < mapTop then
+		z = mapTop
 	end
-	if z > MAP_Z then
-		z = MAP_Z
+	if z > mapBot then
+		z = mapBot
 	end
 	x = SQUARE_SIZE*floor((x + SQUARE_SIZE*0.5)/SQUARE_SIZE)
 	z = SQUARE_SIZE*floor((z + SQUARE_SIZE*0.5)/SQUARE_SIZE)
@@ -761,10 +771,10 @@ local OUTER_POINTS = {
 }
 
 local MAP_BORDER = {
-	{{-10*MAP_X,     0}, {10*MAP_X,     0}},
-	{{-10*MAP_X, MAP_Z}, {10*MAP_X, MAP_Z}},
-	{{    0, -10*MAP_Z}, {    0, 10*MAP_Z}},
-	{{MAP_X, -10*MAP_Z}, {MAP_X, 10*MAP_Z}},
+	{{-10*MAP_X,    mapTop}, {10*MAP_X,   mapTop}},
+	{{-10*MAP_X,    mapBot}, {10*MAP_X,   mapBot}},
+	{{  mapLeft, -10*MAP_Z}, { mapLeft, 10*MAP_Z}},
+	{{ mapRight, -10*MAP_Z}, {mapRight, 10*MAP_Z}},
 }
 
 local smoothFilter = {}
@@ -1248,7 +1258,7 @@ local function MakeRandomPoints(params)
 	end
 	
 	for i = 1, midPoints do
-		local point = GetRandomPointInCircleAvoid(midPointSpace, points, 50, {MAP_X/2, MAP_Z/2}, midPointRadius, 50, false, true)
+		local point = GetRandomPointInCircleAvoid(midPointSpace, points, 50, {MID_X, MID_Z}, midPointRadius, 50, false, true)
 		AddPointAndMirror(points, point, midPointSpace)
 	end
 	
@@ -1604,8 +1614,8 @@ end
 
 local function TerraformByFunc(func)
 	local function DoTerra()
-		for x = 0, MAP_X, SQUARE_SIZE do
-			for z = 0, MAP_Z, SQUARE_SIZE do
+		for x = mapLeft, mapRight, SQUARE_SIZE do
+			for z = mapTop, mapBot, SQUARE_SIZE do
 				spSetHeightMap(x, z, func(x, z))
 			end
 			Spring.ClearWatchDogTimer()
@@ -1618,8 +1628,8 @@ end
 local function TerraformByHeights(heights)
 	local minHeight, maxHeight = 4000, -4000
 	local function DoTerra()
-		for x = 0, MAP_X, SQUARE_SIZE do
-			for z = 0, MAP_Z, SQUARE_SIZE do
+		for x = mapLeft, mapRight, SQUARE_SIZE do
+			for z = mapTop, mapBot, SQUARE_SIZE do
 				local h = heights[x][z]
 				spSetHeightMap(x, z, h or 600)
 				if h < minHeight then
@@ -1655,7 +1665,7 @@ local function GetFloodfillHandler(defaultValue)
 		local activeNewCells = true
 		for i = 1, 4 do
 			local nx, nz = x + ORTH_X[i], z + ORTH_Z[i]
-			if (nx >= 0 and nz >= 0 and nx <= MAP_X and nz <= MAP_Z) then
+			if (nx >= mapLeft and nz >= mapTop and nx <= mapRight and nz <= mapBot) then
 				local otherVal = values[nx] and values[nx][nz]
 				if otherVal then
 					-- If the flood filler ever finds a border that does not match its own
@@ -1683,7 +1693,7 @@ local function GetFloodfillHandler(defaultValue)
 	local externalFuncs = {}
 	
 	function externalFuncs.AddHeight(x, z, val, dist)
-		if (x >= 0 and z >= 0 and x <= MAP_X and z <= MAP_Z) and ((not (influenceDist[x] and influenceDist[x][z])) or (dist < influenceDist[x][z])) then
+		if (x >= mapLeft and z >= mapTop and x <= mapRight and z <= mapBot) and ((not (influenceDist[x] and influenceDist[x][z])) or (dist < influenceDist[x][z])) then
 			influenceDist[x] = influenceDist[x] or {}
 			influenceDist[x][z] = dist
 			values[x] = values[x] or {}
@@ -1712,7 +1722,7 @@ local function GetFloodfillHandler(defaultValue)
 		
 		-- Ensure the table has all values.
 		if #fillX == 0 then
-			for x = 0, MAP_X, SQUARE_SIZE do
+			for x = mapLeft, mapRight, SQUARE_SIZE do
 				values[x] = {}
 				for z = 0, MAP_Z, SQUARE_SIZE do
 					values[x][z] = defaultValue
@@ -2545,7 +2555,7 @@ local function SetEdgeSoloTerrain(params, edge, waveFunc, waveHeightMult, tierFu
 	local startScale = (random()*0.6 - 0.28)*params.iglooHeightMult
 	local sign = GetSign(startScale)
 	
-	local midDist = Dist(GetMidpoint(edge[1], edge[2]), {MAP_X*0.5, MAP_Z*0.5})
+	local midDist = Dist(GetMidpoint(edge[1], edge[2]), {MID_X, MID_Z})
 	local midFactor = max(0, 1 - midDist/1400)
 	
 	local effectMult = (0.6 + 0.5*random())
@@ -2753,9 +2763,9 @@ local function ApplyHeightModifiers(tierConst, tierHeight, tierMin, tierMax, tie
 	local heights = {}
 	
 	local untilSleep = 0
-	for x = 0, MAP_X, SQUARE_SIZE do
+	for x = mapLeft, mapRight, SQUARE_SIZE do
 		heights[x] = {}
-		for z = 0, MAP_Z, SQUARE_SIZE do
+		for z = mapTop, mapBot, SQUARE_SIZE do
 			local posIndex = GetPosIndex(x, z)
 			local baseHeight = tierConst + tierHeight*tiers[x][z]
 			local change = GetHeightMod(tierMin, tierMax, tiers[x][z], heightMod[posIndex], x, z)
@@ -2778,8 +2788,10 @@ local function ApplyHeightModifiers(tierConst, tierHeight, tierMin, tierMax, tie
 	return heights
 end
 
-local function ApplyHeightSmooth(rawHeights, filter)
+local function ApplyHeightSmooth(rawHeights, filter, params)
 	local heights = {}
+	local softMinHeight = params.softMinHeight
+	local softMinHeightBelow = params.softMinHeightBelow
 	local filterSum = 0
 	for i = 1, #filter do
 		filterSum = filterSum + filter[i][3]
@@ -2787,9 +2799,9 @@ local function ApplyHeightSmooth(rawHeights, filter)
 	local filterMult = 1/filterSum
 	
 	local untilSleep = 0
-	for x = 0, MAP_X, SQUARE_SIZE do
+	for x = mapLeft, mapRight, SQUARE_SIZE do
 		heights[x] = {}
-		for z = 0, MAP_Z, SQUARE_SIZE do
+		for z = mapTop, mapBot, SQUARE_SIZE do
 			local thisHeight = rawHeights[x][z]
 			if DO_SMOOTHING then
 				local heightSum = 0
@@ -2798,6 +2810,9 @@ local function ApplyHeightSmooth(rawHeights, filter)
 					heightSum = heightSum + ((rawHeights[sx] and rawHeights[sx][sz]) or thisHeight)*filter[i][3]
 				end
 				heights[x][z] = heightSum*filterMult
+				if heights[x][z] < softMinHeightBelow then
+					heights[x][z] = heights[x][z] + (softMinHeight - heights[x][z])*math.min(0.9, (softMinHeightBelow - heights[x][z]) / (softMinHeightBelow - softMinHeight))
+				end
 			else
 				heights[x][z] = thisHeight
 			end
@@ -2812,29 +2827,32 @@ local function ApplyHeightSmooth(rawHeights, filter)
 	return heights
 end
 
-local function EnforceSeaBorder(smoothHeights, borderWidth)
-	local width = borderWidth * SQUARE_SIZE
+local function EnforceSeaBorder(smoothHeights, params)
+	local width = params.seaBorderWidth * SQUARE_SIZE
+	local borderHeight = params.seaBorderDepth
 	local function EnforceSea(x, z, distIn)
-		if smoothHeights[x][z] < -60 then
-			return
-		end
 		local factor = (1 - distIn / width)
-		smoothHeights[x][z] = smoothHeights[x][z] - (smoothHeights[x][z] + 60)*0.7 * factor*factor
+		if factor < 0.5 then
+			factor = factor*factor*2
+		else
+			factor = (1 - (1 - factor)*(1 - factor)*2)
+		end
+		smoothHeights[x][z] = smoothHeights[x][z] - (smoothHeights[x][z] - borderHeight) * factor
 	end
-	for x = 0, MAP_X, SQUARE_SIZE do
-		for z = 0, width, SQUARE_SIZE do
-			EnforceSea(x, z, z)
+	for x = mapLeft, mapRight, SQUARE_SIZE do
+		for z = mapTop, mapTop + width, SQUARE_SIZE do
+			EnforceSea(x, z, min(z - mapTop, min(x - mapLeft, mapRight - x)))
 		end
-		for z = MAP_Z - width, MAP_Z, SQUARE_SIZE do
-			EnforceSea(x, z, MAP_Z - z)
+		for z = mapBot - width, mapBot, SQUARE_SIZE do
+			EnforceSea(x, z, min(mapBot - z, min(x - mapLeft, mapRight - x)))
 		end
 	end
-	for z = width + SQUARE_SIZE, MAP_Z - (width + SQUARE_SIZE), SQUARE_SIZE do
-		for x = 0, width, SQUARE_SIZE do
-			EnforceSea(x, z, x)
+	for z = mapTop + width + SQUARE_SIZE, mapBot - (width + SQUARE_SIZE), SQUARE_SIZE do
+		for x = mapLeft, mapLeft + width, SQUARE_SIZE do
+			EnforceSea(x, z, x - mapLeft)
 		end
-		for x = MAP_X - width, MAP_X, SQUARE_SIZE do
-			EnforceSea(x, z, MAP_X - x)
+		for x = mapRight - width, mapRight, SQUARE_SIZE do
+			EnforceSea(x, z, mapRight - x)
 		end
 	end
 	return smoothHeights
@@ -2884,7 +2902,7 @@ local function SetStartAndModifyCellTiers_SetPoint(cells, edgesSorted, waveFunc,
 	local function AboveSea(cell)
 		return cell.tier > minLandTier
 	end
-	local startCell = GetClosestCell({0, MAP_Z}, cells, AboveSea)
+	local startCell = GetClosestCell({mapLeft, mapBot}, cells, AboveSea)
 	
 	-- Set start cell parameters
 	startCell.isMainStartPos = true
@@ -3080,7 +3098,7 @@ local function AllocateMetalSpots(cells, edges, minLandTier, startCell, params)
 	
 	-- Force some mid mexes.
 	for i = 1, params.forcedMidMexes do
-		local pos = GetRandomPointInCircle({MAP_X/2, MAP_Z/2}, params.forcedMinMexRadius)
+		local pos = GetRandomPointInCircle({MID_X, MID_Z}, params.forcedMinMexRadius)
 		local closeCell = GetClosestCell(pos, cells)
 		closeCell.metalSpots = (closeCell.metalSpots or 0) + 1
 		closeCell.mexSize = params.mexLoneSize
@@ -3255,7 +3273,7 @@ local function GetRandomMexPos(mexes, smoothHeights, newMexSize, midMergeDist, p
 	local placeRadius = 100
 	local placeIncrement = 3.2
 	local tries = 0
-	local midPos = {MAP_X*0.5, MAP_Z*0.5}
+	local midPos = {MID_X, MID_Z}
 	while tries < 350 do
 		local randomPoint, failed = GetRandomPointInCircleAvoid(newMexSize, mexes, 4, pos, placeRadius, 150, false, useOtherSize)
 		-- Do not let mexes be too close to their own mirror
@@ -3424,10 +3442,10 @@ end
 local function ApplyTreeDensity(cells)
 	local densityMap = {}
 	local point = {}
-	for x = 0, MAP_X, TREE_DENSITY_SIZE do
+	for x = mapLeft, mapRight, TREE_DENSITY_SIZE do
 		densityMap[x] = {}
 		point[1] = x + TREE_DENSITY_SIZE/2
-		for z = 0, MAP_Z, TREE_DENSITY_SIZE do
+		for z = mapTop, mapBot, TREE_DENSITY_SIZE do
 			point[2] = z + TREE_DENSITY_SIZE/2
 			local closeCell = GetClosestCell(point, cells)
 			if closeCell then
@@ -3525,10 +3543,10 @@ local function MakeHeightmap(cells, edges, heightMod, waveFunc, waveHeightMult, 
 	EchoProgress("Height application complete")
 	
 	Spring.ClearWatchDogTimer()
-	local smoothHeights = ApplyHeightSmooth(heights, smoothFilter)
+	local smoothHeights = ApplyHeightSmooth(heights, smoothFilter, params)
 	EchoProgress("Smoothing complete")
 	if params.seaBorderWidth then
-		smoothHeights = EnforceSeaBorder(smoothHeights, params.seaBorderWidth)
+		smoothHeights = EnforceSeaBorder(smoothHeights, params)
 	end
 	EchoProgress("EnforceSeaBorder complete")
 
@@ -3551,15 +3569,15 @@ local waitCount = 0
 local newParams = {
 	startPoint = false,
 	startPointSize = false,
-	vorPoints = 32,
+	vorPoints = 38,
 	vorPointsRand = 0,
 	vorSizePointMult = 0,
 	vorSizePointMultRand = 0,
 	midPoints = 0,
 	midPointRadius = 850,
 	midPointSpace = 220,
-	minSpace = 160,
-	maxSpace = 180,
+	minSpace = 150,
+	maxSpace = 160,
 	pointSplitRadius = 340,
 	splitIterations = 2,
 	repelIterations = 5,
@@ -3579,7 +3597,10 @@ local newParams = {
 	steepSmallCliffWidth = 8,
 	cliffBotWidth = 60,
 	steepCliffWidth = 12,
-	seaBorderWidth = 21,
+	seaBorderWidth = 30,
+	seaBorderDepth = -110,
+	softMinHeight = -110,
+	softMinHeightBelow = -60,
 	steepCliffChance = 0.85,
 	bigDiffSteepCliffChance = 0.75,
 	smallCliffChance = 0.5,
@@ -3592,7 +3613,7 @@ local newParams = {
 	vehPassTiers = 2, -- Update based on tierHeight
 	rampWidth = 145,
 	generalWaveMod = 0.65,
-	waveDirectMult = 0.9,
+	waveDirectMult = 1.5,
 	bucketBase = 50,
 	bucketRandomOffset = 60,
 	bucketStdMult = 0.5,
@@ -3600,7 +3621,7 @@ local newParams = {
 	bucketSizeMult = 0.55,
 	bucketSizeMultRand = 0.3,
 	heightOffsetFactor = 0.9,
-	mapBorderTier = -3,
+	mapBorderTier = -4,
 	nonBorderSeaNeighbourLimit = 0, -- Allow lone lakes
 	seaLimitMaxAverageTier = -0.7, -- Most nearby area has to be sand.
 	StartPositionFunc = SetStartAndModifyCellTiers_SetPoint,
@@ -3679,7 +3700,24 @@ local function GetSpaceIncreaseParams()
 end
 
 local function MakeMap()
-	local params = newParams
+	local params = Spring.Utilities.CopyTable(newParams)
+	params.vorPoints = math.ceil(params.vorPoints * useMapArea)
+	params.xBuffer = math.ceil((MAP_X - math.sqrt(useMapArea) * MAP_X) / (2 * SQUARE_SIZE)) * SQUARE_SIZE
+	params.zBuffer = math.ceil((MAP_Z - math.sqrt(useMapArea) * MAP_Z) / (2 * SQUARE_SIZE)) * SQUARE_SIZE
+	
+	mapLeft  = params.xBuffer
+	mapTop   = params.zBuffer
+	mapRight = MAP_X - params.xBuffer
+	mapBot   = MAP_Z - params.zBuffer
+	mapWidth  = mapRight - mapLeft
+	mapHeight = mapBot - mapTop
+	
+	MAP_BORDER = {
+		{{-10*MAP_X,    mapTop}, {10*MAP_X,   mapTop}},
+		{{-10*MAP_X,    mapBot}, {10*MAP_X,   mapBot}},
+		{{  mapLeft, -10*MAP_Z}, { mapLeft, 10*MAP_Z}},
+		{{ mapRight, -10*MAP_Z}, {mapRight, 10*MAP_Z}},
+	}
 	--local randomSeed = GetSeed()
 	--randomSeed = 6576411
 	--math.randomseed(randomSeed)
@@ -3710,7 +3748,8 @@ local function MakeMap()
 	GG.rk_MapGenerationComplete()
 end
 
-function GG.GenerateNewMap()
+function GG.GenerateNewMap(newUseMapArea)
+	useMapArea = newUseMapArea or 1
 	StartScript(MakeMap)
 end
 

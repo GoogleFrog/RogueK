@@ -43,6 +43,13 @@ end
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
+local function SetGlobalLos(enabled)
+	local allyTeams = Spring.GetAllyTeamList()
+	for i = 1, #allyTeams do
+		Spring.SetGlobalLos(allyTeams[i], enabled)
+	end
+end
+
 local function SetBuildRulesParams(teamID)
 	local build = buildData[teamID]
 	for i = 1, #build.units do
@@ -187,7 +194,8 @@ local function StartNextRound()
 		local teamID = playerTeamList[i]
 		SetupTeamShop(teamID, roundDef)
 	end
-	GG.GenerateNewMap()
+	GG.GenerateNewMap(roundDef.mapSize)
+	SetGlobalLos(true)
 end
 
 --------------------------------------------------------------------------------
@@ -217,6 +225,7 @@ end
 --------------------------------------------------------------------------------
 
 function GG.rk_MapGenerationComplete()
+	SetGlobalLos(false)
 	Spring.SetGameRulesParam("map_texture_generate_count", roundNumber)
 end
 

@@ -4,6 +4,7 @@ local itemDefs, itemLists = VFS.Include("LuaRules/Configs/rk_item_defs.lua")
 local roundDefs = {
 	{
 		shopSize = {3, 3},
+		mapSize = 0.3,
 		shopListsUsed = {"turrets", "mounts", "modules"},
 		prescribeShop = {
 			"turrets", "mounts", "modules",
