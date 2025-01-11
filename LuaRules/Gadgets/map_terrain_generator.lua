@@ -24,8 +24,8 @@ local DO_SMOOTHING = true
 local DISABLE_TERRAIN_GENERATOR = false
 local RELOAD_REGEN = false
 
-local DRAW_EDGES = true
-local PRINT_TIERS = true
+local DRAW_EDGES = false
+local PRINT_TIERS = false
 local PRINT_MEX_ALLOC = false
 local PRINT_CURVES = false
 local SHOW_WAVEMAP = false
@@ -2951,13 +2951,16 @@ local function SetStartAndModifyCellTiers_SetPoint(cells, edgesSorted, waveFunc,
 	SetStartboxDataFromPolygon(BoundPolygonVerticies(GetCellVertices(startCell), {0, 0}, Dist(startCell.mexMidpoint, {0, 0}) + 130))
 	
 	local averageTier = math.max(minLandTier, startCell.tier)
-	local averageCount = 1
+	local averageCount = 0
 	for i = 1, #startCell.neighbours do
-		averageTier = averageTier + startCell.neighbours[i].tier
-		averageCount = averageCount + 1
+		if not startCell.neighbours[i].underwater then
+			averageTier = averageTier + startCell.neighbours[i].tier
+			averageCount = averageCount + 1
+		end
 	end
-	startCell.tier = floor(averageTier / averageCount + 0.25 + random()*0.5)
-	
+	if averageCount > 0 then
+		startCell.tier = floor(averageTier / averageCount + 0.25 + random()*0.5)
+	end
 	if SYMMETRY then
 		startCell.mirror.tier = startCell.tier
 	end
@@ -3754,7 +3757,7 @@ local function MakeMap()
 		{{  mapLeft, -10*MAP_Z}, { mapLeft, 10*MAP_Z}},
 		{{ mapRight, -10*MAP_Z}, {mapRight, 10*MAP_Z}},
 	}
-	local randomSeed = 1246958 -- GetSeed()
+	local randomSeed = GetSeed() -- 1246958
 	math.randomseed(randomSeed)
 
 	Spring.SetGameRulesParam("typemap", "temperate2")
