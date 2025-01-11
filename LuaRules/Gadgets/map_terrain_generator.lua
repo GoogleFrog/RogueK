@@ -24,7 +24,7 @@ local DO_SMOOTHING = true
 local DISABLE_TERRAIN_GENERATOR = false
 local RELOAD_REGEN = false
 
-local DRAW_EDGES = false
+local DRAW_EDGES = true
 local PRINT_TIERS = false
 local PRINT_MEX_ALLOC = false
 local PRINT_CURVES = false
@@ -2395,14 +2395,14 @@ local function SetEdgePassability(params, edge, minLandTier)
 	
 	if edge.underwater then
 		-- Always make a ramp.
-		edge.terrainWidth = params.rampWidth
+		edge.terrainWidth = params.rampWidth * edge.tierDiff
 	elseif edge.tierDiff <= 1 then
 		if edge.tierDiff > 0 and random() < params.smallCliffChance then
 			edge.terrainWidth = params.steepSmallCliffWidth
 		else
-			edge.terrainWidth = params.rampWidth
+			edge.terrainWidth = params.smallRampWidth
 		end
-	elseif edge.lowTier < minLandTier and edge.highTier > minLandTier then
+	elseif edge.lowTier < minLandTier and edge.highTier >= minLandTier and edge.tierDiff >= 3 then
 		-- Always make a cliff
 		edge.terrainWidth = params.steepCliffWidth
 	elseif edge.length < params.impassEdgeThreshold and ((impassCount == 0) or (matchCount*0.7 - impassCount >= 0)) and 
@@ -2710,7 +2710,41 @@ local function MirrorEdgePassability(edge)
 	end
 end
 
-local function GenerateEdgePassability(params, edgesSorted, waveFunc, waveHeightMult, tierMin, tierMax, tierFunc, minLandTier)
+local function FindConnectedComponents(cells)
+	local exploreTree = {}
+	local cellComps = {}
+	local component = 0
+	for i = 1, #cells do
+		local root = cells[i]
+		if not cellComps[root.index] and not root.underwater then
+			exploreTree[#exploreTree + 1] = root.index
+			component = component + 1
+			cellComps[root.index] = component
+		end
+		while #exploreTree > 0 do
+			local cellIndex = exploreTree[#exploreTree]
+			exploreTree[#exploreTree] = nil
+			local expCell = cells[cellIndex]
+			for j = 1, #expCell.edges do
+				local edge = expCell.edges[j]
+				if edge.vehPass and edge.otherFace[cellIndex] then
+					local other = edge.otherFace[cellIndex]
+					if not cellComps[other.index] and not other.underwater then
+						exploreTree[#exploreTree + 1] = other.index
+						cellComps[other.index] = component
+					end
+				end
+			end
+		end
+	end
+	
+	for i = 1, #cells do
+		local cell = cells[i]
+		PointEcho(cell.site, cellComps[i] or "NA")
+	end
+end
+
+local function GenerateEdgePassability(params, cells, edgesSorted, waveFunc, waveHeightMult, tierMin, tierMax, tierFunc, minLandTier)
 	-- Record some useful edge stats.
 	for i = #edgesSorted, 1, -1 do
 		local thisEdge = edgesSorted[i]
@@ -2741,6 +2775,8 @@ local function GenerateEdgePassability(params, edgesSorted, waveFunc, waveHeight
 			end
 		end
 	end
+	
+	FindConnectedComponents(cells)
 	
 	return tierMin, tierMax
 end
@@ -2932,37 +2968,46 @@ end
 local STARTBOX_WIDTH = 600
 
 local function SetStartAndModifyCellTiers_SetPoint(cells, edgesSorted, waveFunc, waveMult, minLandTier, params)
+	local disallowedCells = {}
 	local function AboveSea(cell)
-		return cell.tier > minLandTier
+		return cell.tier > minLandTier and not disallowedCells[cell.index]
 	end
-	local startCell = GetClosestCell({mapLeft, mapBot}, cells, AboveSea)
-	
-	-- Set start cell parameters
-	startCell.isMainStartPos = true
-	startCell.isStartPos = true
-	startCell.mexMidpoint = GetMidpoint(startCell.averageMid, startCell.site)
-	if SYMMETRY then
-		startCell.mirror.isMainStartPos = startCell.isMainStartPos
-		startCell.mirror.isStartPos = startCell.isStartPos
-		startCell.mirror.mexMidpoint = startCell.mexMidpoint
-	end
-	
-	-- Set start box, moved towards the corner.
-	SetStartboxDataFromPolygon(BoundPolygonVerticies(GetCellVertices(startCell), {0, 0}, Dist(startCell.mexMidpoint, {0, 0}) + 130))
-	
-	local averageTier = math.max(minLandTier, startCell.tier)
-	local averageCount = 0
-	for i = 1, #startCell.neighbours do
-		if not startCell.neighbours[i].underwater then
-			averageTier = averageTier + startCell.neighbours[i].tier
-			averageCount = averageCount + 1
+	local startCell = false
+	while not startCell do
+		startCell = GetClosestCell({mapLeft, mapBot}, cells, AboveSea)
+		if not startCell then
+			return false
 		end
-	end
-	if averageCount > 0 then
-		startCell.tier = floor(averageTier / averageCount + 0.25 + random()*0.5)
-	end
-	if SYMMETRY then
-		startCell.mirror.tier = startCell.tier
+		-- Set start cell parameters
+		startCell.isMainStartPos = true
+		startCell.isStartPos = true
+		startCell.mexMidpoint = GetMidpoint(startCell.averageMid, startCell.site)
+		if SYMMETRY then
+			startCell.mirror.isMainStartPos = startCell.isMainStartPos
+			startCell.mirror.isStartPos = startCell.isStartPos
+			startCell.mirror.mexMidpoint = startCell.mexMidpoint
+		end
+		
+		-- Set start box, moved towards the corner.
+		SetStartboxDataFromPolygon(BoundPolygonVerticies(GetCellVertices(startCell), {0, 0}, Dist(startCell.mexMidpoint, {0, 0}) + 130))
+		
+		local averageTier = math.max(minLandTier, startCell.tier)
+		local averageCount = 0
+		for i = 1, #startCell.neighbours do
+			if not startCell.neighbours[i].underwater then
+				averageTier = averageTier + startCell.neighbours[i].tier
+				averageCount = averageCount + 1
+			end
+		end
+		if averageCount > 0 then
+			startCell.tier = floor(averageTier / averageCount + 0.25 + random()*0.5)
+		else
+			disallowedCells[startCell.index] = true
+			startCell = false
+		end
+		if SYMMETRY then
+			startCell.mirror.tier = startCell.tier
+		end
 	end
 	return startCell
 end
@@ -3543,6 +3588,9 @@ local function GetTerrainStructure(params)
 	local startCell = params.StartPositionFunc(cells, edgesSorted, waveFunc, waveHeightMult, minLandTier, params)
 	EchoProgress("Start cell complete")
 	ConditionalSleep()
+	if not startCell then
+		return false
+	end
 	
 	if PRINT_TIERS then
 		for i = 1, #cells do
@@ -3550,7 +3598,7 @@ local function GetTerrainStructure(params)
 		end
 	end
 	
-	tierMin, tierMax = GenerateEdgePassability(params, edgesSorted, waveFunc, waveHeightMult, tierMin, tierMax, tierFunc, minLandTier)
+	tierMin, tierMax = GenerateEdgePassability(params, cells, edgesSorted, waveFunc, waveHeightMult, tierMin, tierMax, tierFunc, minLandTier)
 	EchoProgress("GenerateEdgePassability complete")
 	ConditionalSleep()
 	AllocateMetalSpots(cells, edges, minLandTier, startCell, params)
@@ -3651,6 +3699,7 @@ local newParams = {
 	tierHeight = 60,
 	vehPassTiers = 2, -- Update based on tierHeight
 	rampWidth = 145,
+	smallRampWidth = 160,
 	generalWaveMod = 0.65,
 	waveDirectMult = 1.5,
 	bucketBase = 50,
@@ -3771,8 +3820,11 @@ local function MakeMap()
 	
 	EchoProgress("Map Terrain Generation")
 	Spring.Echo("Random Seed", randomSeed)
+	local cells, edges, edgesSorted, heightMod, waveFunc, waveHeightMult, tiers, tierConst, tierHeight, tierMin, tierMax, startCell
+	while not cells do
+		cells, edges, edgesSorted, heightMod, waveFunc, waveHeightMult, tiers, tierConst, tierHeight, tierMin, tierMax, startCell = GetTerrainStructure(params)
+	end
 	
-	local cells, edges, edgesSorted, heightMod, waveFunc, waveHeightMult, tiers, tierConst, tierHeight, tierMin, tierMax, startCell = GetTerrainStructure(params)
 	toDrawEdges = DRAW_EDGES and edges
 	
 	if not SHOW_WAVEMAP then
@@ -3809,13 +3861,14 @@ function gadget:GameFrame()
 	--	--PointEcho(point, "X")
 	--end
 
-	for i = 1, #toDrawEdges do
-		local edge = toDrawEdges[i]
-		LineDraw(edge)
-		--LineEcho(edge, MakeBoolString({edge.vehPass, edge.botPass, edge.landPass}) .. ", width: " .. edge.terrainWidth .. ", tier: " .. edge.tierDiff)
+	if #coroutines == 0 then
+		for i = 1, #toDrawEdges do
+			local edge = toDrawEdges[i]
+			LineDraw(edge)
+			LineEcho(edge, (edge.vehPass and "") or "IMPASS")
+		end
+		toDrawEdges = nil
 	end
-	
-	toDrawEdges = nil
 end
 
 --------------------------------------------------------------------------------
