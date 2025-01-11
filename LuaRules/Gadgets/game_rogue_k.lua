@@ -340,7 +340,6 @@ local function SetBuildOptions(unitID, unitDefID, teamID)
 		local buildoptions = ud.buildOptions
 		for i = 1, #buildoptions do
 			local opt = buildoptions[i]
-			Spring.Echo(UnitDefs[opt].name)
 			if loadoutData[teamID].validUnitdefIDMap[opt] or opt == FACTORY_ID then
 				AddUnit(unitID, opt)
 			else
