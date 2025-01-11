@@ -24,9 +24,9 @@ local DO_SMOOTHING = true
 local DISABLE_TERRAIN_GENERATOR = false
 local RELOAD_REGEN = false
 
-local DRAW_EDGES = false
+local DRAW_EDGES = true
+local PRINT_TIERS = true
 local PRINT_MEX_ALLOC = false
-local PRINT_TIERS = false
 local PRINT_CURVES = false
 local SHOW_WAVEMAP = false
 local TIME_MAP_GEN = false
@@ -3754,7 +3754,7 @@ local function MakeMap()
 		{{  mapLeft, -10*MAP_Z}, { mapLeft, 10*MAP_Z}},
 		{{ mapRight, -10*MAP_Z}, {mapRight, 10*MAP_Z}},
 	}
-	local randomSeed = GetSeed()
+	local randomSeed = 1246958 -- GetSeed()
 	math.randomseed(randomSeed)
 
 	Spring.SetGameRulesParam("typemap", "temperate2")

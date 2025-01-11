@@ -315,7 +315,6 @@ local function SetMapTexture(texturePool, mapTexX, mapTexZ, topTexX, topTexZ, to
 
 		cur = Spring.GetTimer()
 		Spring.Echo("Specular rendered in "..(Spring.DiffTimers(cur, ago, true)))
-		Sleep()
 
 		Spring.Echo("Starting to render SquareTextures")
 		local splattex = USE_SHADING_TEXTURE and gl.CreateTexture(MAP_X, MAP_Z,
@@ -404,7 +403,7 @@ local function SetMapTexture(texturePool, mapTexX, mapTexZ, topTexX, topTexZ, to
 		gl.DeleteTextureFBO(fulltex)
 		
 		if texOut and texOut ~= usedgrass and texOut ~= usedminimap then
-			glDeleteTexture(texOut)
+			--glDeleteTexture(texOut)
 			texOut = nil
 		end
 		
@@ -430,6 +429,12 @@ local function SetMapTexture(texturePool, mapTexX, mapTexZ, topTexX, topTexZ, to
 		Spring.Echo("map fully processed in: "..(Spring.DiffTimers(DrawEnd, DrawStart, true)))
 		
 		mapfullyprocessed = true
+		while true do
+			for i = 1, 30 do
+				Sleep()
+			end
+			Spring.SetMapShadingTexture("$minimap", usedminimap)
+		end
 	end
 	
 	StartScript(DrawLoop)
