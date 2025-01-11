@@ -90,7 +90,7 @@ local function DeserialiseUnit(unitStr)
 				level = data[index + 2]
 			}
 			index = index + 3
-		elseif data[index] = "modules" then
+		elseif data[index] == "modules" then
 			index = index + 1
 		else
 			unit.modules[#unit.modules + 1] = {
@@ -187,6 +187,7 @@ local function StartNextRound()
 		local teamID = playerTeamList[i]
 		SetupTeamShop(teamID, roundDef)
 	end
+	GG.GenerateNewMap()
 end
 
 --------------------------------------------------------------------------------
@@ -214,6 +215,10 @@ end
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
+
+function GG.rk_MapGenerationComplete()
+	Spring.SetGameRulesParam("map_texture_generate_count", roundNumber)
+end
 
 function gadget:Initialize()
 	Spring.SetGameRulesParam("rk_preGame", 1)
