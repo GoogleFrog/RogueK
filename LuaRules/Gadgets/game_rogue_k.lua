@@ -208,6 +208,7 @@ local function NewGame(cmd, line, words, player)
 		InitPlayerTeam(teamID)
 	end
 	StartNextRound()
+	Spring.SendCommands("wbynum 255 SPRINGIE:FORCE")
 end
 
 local function SendNextRoundAndBuild(cmd, line, words, player)

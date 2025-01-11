@@ -14,12 +14,15 @@ local roundDefs = {
 	},
 	{
 		shopSize = {3, 4},
+		mapSize = 0.45,
 	},
 	{
 		shopSize = {3, 5},
+		mapSize = 0.55,
 	},
 	{
 		shopSize = {4, 5},
+		mapSize = 0.65,
 	},
 }
 

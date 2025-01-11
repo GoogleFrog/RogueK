@@ -88,6 +88,7 @@ local function SetupWindow()
 		OnClick = {
 			function()
 				Spring.SendCommands("luarules rk_new_game")
+				Spring.SendCommands("forcestart")
 			end
 		}
 	}
