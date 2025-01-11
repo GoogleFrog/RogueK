@@ -25,12 +25,17 @@ local simpleCombos = {
 	"vehcon",
 }
 
+local factoryBuildlist = {}
+local constructorBuildlist = {
+	"rogue_factory"
+}
+
 local function MakeSimpleClone(simpleList, prefix)
 	for i = 1, #simpleList do
 		local name = simpleList[i]
 		local cloneName = prefix .. '_' .. name
 		UnitDefs[cloneName] = CopyTable(UnitDefs[name], true)
-		UnitDefs[cloneName]['rk_' .. prefix] = 1
+		UnitDefs[cloneName].customparams['rk_' .. prefix] = 1
 		UnitDefs[cloneName].base_unit = name
 		UnitDefs[cloneName].corpse = nil
 	end
@@ -50,9 +55,23 @@ end
 -- in the standard way, and selectkeys can select distinct groups
 for i = 1, #toCopy do
 	local name = toCopy[i]
+	local isMobile = (UnitDefs[name].speed or 0) > 0
 	for cloneID = 1, CLONE_COPIES do
 		local cloneName = name .. '_' .. cloneID
 		UnitDefs[cloneName] = CopyTable(UnitDefs[name], true)
 		UnitDefs[cloneName].customparams.clone_id = cloneID
+		if isMobile then
+			factoryBuildlist[#factoryBuildlist + 1] = cloneName
+		else
+			constructorBuildlist[#constructorBuildlist + 1] = cloneName
+		end
 	end
 end
+
+for name, ud in pairs(UnitDefs) do
+	if ud.customparams.clone_id and (ud.workertime or 0) > 0 then
+		ud.buildoptions = constructorBuildlist
+	end
+end
+
+UnitDefs["rogue_factory"].buildoptions = factoryBuildlist

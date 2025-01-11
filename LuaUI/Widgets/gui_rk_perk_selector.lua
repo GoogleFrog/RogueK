@@ -916,7 +916,7 @@ end
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-local function SendDoneAndBuild()
+local function SendDoneAndLoadout()
 	local units = armyFunctions.SerialiseUnits()
 	local perks = perkFunctions.SerialisePerks()
 	local inventory = armyFunctions.SerialiseInventory()
@@ -930,7 +930,7 @@ local function SendDoneAndBuild()
 	for i = 1, #inventory do
 		sendData = sendData .. " " .. inventory[i]
 	end
-	Spring.SendCommands("luarules rk_send_next_round_and_build " .. sendData)
+	Spring.SendCommands("luarules rk_send_next_round_and_loadout " .. sendData)
 end
 
 --------------------------------------------------------------------------------
@@ -946,7 +946,7 @@ function widget:Update()
 	end
 	if wantContinueToNextRound then
 		if oldShopOpen and mainWindow then
-			SendDoneAndBuild()
+			SendDoneAndLoadout()
 			oldShopOpen = false
 			windowVisible = false
 			screen0:RemoveChild(mainWindow)
