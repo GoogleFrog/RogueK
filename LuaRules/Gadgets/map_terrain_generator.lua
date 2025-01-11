@@ -1727,7 +1727,7 @@ local function GetFloodfillHandler(defaultValue)
 			fillX[#fillX], fillZ[#fillZ] = nil, nil
 			CheckAndFillNearby(x, z, values[x][z])
 			untilSleep = untilSleep + 1
-			if untilSleep > 4000 then
+			if untilSleep > 7000 then
 				untilSleep = 0
 				Sleep()
 			end
@@ -2363,15 +2363,15 @@ local function SetEdgePassability(params, edge, minLandTier)
 		end
 	end
 	
-	if edge.tierDiff <= 1 then
+	if edge.underwater then
+		-- Always make a ramp.
+		edge.terrainWidth = params.rampWidth
+	elseif edge.tierDiff <= 1 then
 		if edge.tierDiff > 0 and random() < params.smallCliffChance then
 			edge.terrainWidth = params.steepSmallCliffWidth
 		else
 			edge.terrainWidth = params.rampWidth
 		end
-	elseif edge.underwater then
-		-- Always make a ramp.
-		edge.terrainWidth = params.rampWidth
 	elseif edge.lowTier < minLandTier and edge.highTier > minLandTier then
 		-- Always make a cliff
 		edge.terrainWidth = params.steepCliffWidth
@@ -2812,6 +2812,34 @@ local function ApplyHeightSmooth(rawHeights, filter)
 	return heights
 end
 
+local function EnforceSeaBorder(smoothHeights, borderWidth)
+	local width = borderWidth * SQUARE_SIZE
+	local function EnforceSea(x, z, distIn)
+		if smoothHeights[x][z] < -60 then
+			return
+		end
+		local factor = (1 - distIn / width)
+		smoothHeights[x][z] = smoothHeights[x][z] - (smoothHeights[x][z] + 60)*0.7 * factor*factor
+	end
+	for x = 0, MAP_X, SQUARE_SIZE do
+		for z = 0, width, SQUARE_SIZE do
+			EnforceSea(x, z, z)
+		end
+		for z = MAP_Z - width, MAP_Z, SQUARE_SIZE do
+			EnforceSea(x, z, MAP_Z - z)
+		end
+	end
+	for z = width + SQUARE_SIZE, MAP_Z - (width + SQUARE_SIZE), SQUARE_SIZE do
+		for x = 0, width, SQUARE_SIZE do
+			EnforceSea(x, z, x)
+		end
+		for x = MAP_X - width, MAP_X, SQUARE_SIZE do
+			EnforceSea(x, z, MAP_X - x)
+		end
+	end
+	return smoothHeights
+end
+
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 -- Start positions
@@ -2854,7 +2882,7 @@ local STARTBOX_WIDTH = 600
 
 local function SetStartAndModifyCellTiers_SetPoint(cells, edgesSorted, waveFunc, waveMult, minLandTier, params)
 	local function AboveSea(cell)
-		return cell.tier >= minLandTier
+		return cell.tier > minLandTier
 	end
 	local startCell = GetClosestCell({0, MAP_Z}, cells, AboveSea)
 	
@@ -2879,9 +2907,6 @@ local function SetStartAndModifyCellTiers_SetPoint(cells, edgesSorted, waveFunc,
 	end
 	startCell.tier = floor(averageTier / averageCount + 0.25 + random()*0.5)
 	
-	if startCell.tier < minLandTier then
-		startCell.tier = minLandTier
-	end
 	if SYMMETRY then
 		startCell.mirror.tier = startCell.tier
 	end
@@ -3502,6 +3527,10 @@ local function MakeHeightmap(cells, edges, heightMod, waveFunc, waveHeightMult, 
 	Spring.ClearWatchDogTimer()
 	local smoothHeights = ApplyHeightSmooth(heights, smoothFilter)
 	EchoProgress("Smoothing complete")
+	if params.seaBorderWidth then
+		smoothHeights = EnforceSeaBorder(smoothHeights, params.seaBorderWidth)
+	end
+	EchoProgress("EnforceSeaBorder complete")
 
 	Spring.ClearWatchDogTimer()
 	TerraformByHeights(smoothHeights)
@@ -3550,6 +3579,7 @@ local newParams = {
 	steepSmallCliffWidth = 8,
 	cliffBotWidth = 60,
 	steepCliffWidth = 12,
+	seaBorderWidth = 21,
 	steepCliffChance = 0.85,
 	bigDiffSteepCliffChance = 0.75,
 	smallCliffChance = 0.5,
