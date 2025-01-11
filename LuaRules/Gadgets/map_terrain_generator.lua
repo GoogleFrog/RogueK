@@ -50,6 +50,12 @@ local coroutine = coroutine
 local Sleep     = coroutine.yield
 local coroutines = {}
 
+local function ConditionalSleep()
+	if not GG.mapGenAtFullSpeed then
+		Sleep()
+	end
+end
+
 local function StartScript(fn)
 	local co = coroutine.create(fn)
 	coroutines[#coroutines + 1] = co
@@ -912,7 +918,6 @@ local function GenerateVoronoiCells(points)
 		cells[#cells + 1] = newCell
 	end
 	
-	Sleep()
 	return cells
 end
 
@@ -952,7 +957,7 @@ local function BoundExtendedVoronoiToMapEdge(cells)
 			end
 		end
 	end
-	Sleep()
+	ConditionalSleep()
 	return cells
 end
 
@@ -1029,7 +1034,6 @@ local function CleanVoronoiReferences(cells)
 			end
 		end
 	end
-	Sleep()
 	
 	-- Set index as it is required for the self-mirror check
 	for i = 1, #edgeList do
@@ -1170,7 +1174,7 @@ local function CleanVoronoiReferences(cells)
 			thisCell.firstMirror = true
 		end
 	end
-	Sleep()
+	ConditionalSleep()
 	
 	return cells, edgeList
 end
@@ -1718,7 +1722,7 @@ local function GetFloodfillHandler(defaultValue)
 			local x, z = floor((point[1] + 4)/8) * 8, floor((point[2] + 4)/8) * 8
 			externalFuncs.AddHeight(x, z, cells[i].tier, 0)
 		end
-		Sleep()
+		ConditionalSleep()
 		
 		-- Ensure the table has all values.
 		if #fillX == 0 then
@@ -1726,6 +1730,11 @@ local function GetFloodfillHandler(defaultValue)
 				values[x] = {}
 				for z = 0, MAP_Z, SQUARE_SIZE do
 					values[x][z] = defaultValue
+					untilSleep = untilSleep + 1
+					if untilSleep > 6000 then
+						untilSleep = 0
+						ConditionalSleep()
+					end
 				end
 			end
 		end
@@ -1737,12 +1746,12 @@ local function GetFloodfillHandler(defaultValue)
 			fillX[#fillX], fillZ[#fillZ] = nil, nil
 			CheckAndFillNearby(x, z, values[x][z])
 			untilSleep = untilSleep + 1
-			if untilSleep > 7000 then
+			if untilSleep > 4000 then
 				untilSleep = 0
-				Sleep()
+				ConditionalSleep()
 			end
 		end
-		Sleep()
+		ConditionalSleep()
 		return values
 	end
 	
@@ -2109,13 +2118,13 @@ local function ProcessEdges(cells, edges)
 				end
 			end
 		end
-		Sleep()
+		ConditionalSleep()
 		
 		if thisEdge.iglooFunc then
 			GenerateEdgeTerrain(heightMod, waveMod, thisEdge)
 		end
 		Spring.ClearWatchDogTimer()
-		Sleep()
+		ConditionalSleep()
 	end
 	
 	return tierFlood, heightMod, waveMod
@@ -2145,10 +2154,15 @@ end
 local function ChangeCellTierIfHomogenousNeighbours(cell, tierConst, tierHeight, tierMin, tierMax)
 	local myTier = cell.tier
 	local nbhd = cell.neighbours
+	local averageTierDiff = 0
 	for i = 1, #nbhd do
-		if nbhd[i].tier ~= myTier then
-			return tierMin, tierMax
-		end
+		averageTierDiff = averageTierDiff + math.abs(myTier - nbhd[i].tier)
+	end
+	averageTierDiff = averageTierDiff / #nbhd
+	if averageTierDiff > 0.2 then
+		tierMin = min(myTier, tierMin)
+		tierMax = max(myTier, tierMax)
+		return tierMin, tierMax
 	end
 	
 	local newTier = myTier + ((random() > 0.5 and 1) or -1)
@@ -2295,6 +2309,12 @@ local function GenerateCellTiers(params, cells, waveFunc)
 				end
 			end
 		end
+	end
+	
+	-- Cache now that we are done
+	for i = 1, #cells do
+		local cell = cells[i]
+		cell.underwater = cell.tier < minLandTier
 	end
 	
 	return tierConst, tierHeight, GetTierFunc(tierConst, tierHeight), tierMin, tierMax, minLandTier
@@ -2777,13 +2797,14 @@ local function ApplyHeightModifiers(tierConst, tierHeight, tierMin, tierMax, tie
 			end
 			
 			heights[x][z] = baseHeight + waveHeight + tierHeight*change
-			if untilSleep > 200 then
+			untilSleep = untilSleep + 1
+			if untilSleep > 5000 then
 				untilSleep = 0
-				Sleep()
+				ConditionalSleep()
 			end
 		end
 	end
-	Sleep()
+	ConditionalSleep()
 	
 	return heights
 end
@@ -2816,13 +2837,14 @@ local function ApplyHeightSmooth(rawHeights, filter, params)
 			else
 				heights[x][z] = thisHeight
 			end
-			if untilSleep > 2000 then
+			untilSleep = untilSleep + 1
+			if untilSleep > 4000 then
 				untilSleep = 0
-				Sleep()
+				ConditionalSleep()
 			end
 		end
 	end
-	Sleep()
+	ConditionalSleep()
 	
 	return heights
 end
@@ -2830,6 +2852,7 @@ end
 local function EnforceSeaBorder(smoothHeights, params)
 	local width = params.seaBorderWidth * SQUARE_SIZE
 	local borderHeight = params.seaBorderDepth
+	local untilSleep = 0
 	local function EnforceSea(x, z, distIn)
 		local factor = (1 - distIn / width)
 		if factor < 0.5 then
@@ -2846,6 +2869,11 @@ local function EnforceSeaBorder(smoothHeights, params)
 		for z = mapBot - width, mapBot, SQUARE_SIZE do
 			EnforceSea(x, z, min(mapBot - z, min(x - mapLeft, mapRight - x)))
 		end
+		untilSleep = untilSleep + 1
+		if untilSleep > 15 then
+			untilSleep = 0
+			ConditionalSleep()
+		end
 	end
 	for z = mapTop + width + SQUARE_SIZE, mapBot - (width + SQUARE_SIZE), SQUARE_SIZE do
 		for x = mapLeft, mapLeft + width, SQUARE_SIZE do
@@ -2853,6 +2881,11 @@ local function EnforceSeaBorder(smoothHeights, params)
 		end
 		for x = mapRight - width, mapRight, SQUARE_SIZE do
 			EnforceSea(x, z, mapRight - x)
+		end
+		untilSleep = untilSleep + 1
+		if untilSleep > 15 then
+			untilSleep = 0
+			ConditionalSleep()
 		end
 	end
 	return smoothHeights
@@ -3488,44 +3521,44 @@ local function GetTerrainStructure(params)
 		TerraformByFunc(waveFunc)
 	end
 	EchoProgress("Wave generation complete")
-	Sleep()
+	ConditionalSleep()
 	
 	local cells, edges = GetVoronoi(params)
 	EchoProgress("Voronoi generation complete")
-	Sleep()
+	ConditionalSleep()
 	
 	local edgesSorted = Spring.Utilities.CopyTable(edges, false)
 	table.sort(edgesSorted, CompareLength)
 	
 	local tierConst, tierHeight, tierFunc, tierMin, tierMax, minLandTier = GenerateCellTiers(params, cells, waveFunc)
 	EchoProgress("Cells teirs complete")
-	Sleep()
+	ConditionalSleep()
 	local waveHeightMult = GetWaveHeightMult(tierMin, tierMax, params)
 	EchoProgress("GetWaveHeightMult complete")
-	Sleep()
+	ConditionalSleep()
 	
 	local startCell = params.StartPositionFunc(cells, edgesSorted, waveFunc, waveHeightMult, minLandTier, params)
 	EchoProgress("Start cell complete")
-	Sleep()
+	ConditionalSleep()
 	
 	if PRINT_TIERS then
 		for i = 1, #cells do
-			PointEcho(cells[i].site, "Tier " .. cells[i].tier)
+			PointEcho(cells[i].site, "Tier " .. cells[i].tier .. (cells[i].underwater and " Underwater" or ""))
 		end
 	end
 	
 	tierMin, tierMax = GenerateEdgePassability(params, edgesSorted, waveFunc, waveHeightMult, tierMin, tierMax, tierFunc, minLandTier)
 	EchoProgress("GenerateEdgePassability complete")
-	Sleep()
+	ConditionalSleep()
 	AllocateMetalSpots(cells, edges, minLandTier, startCell, params)
 	EchoProgress("AllocateMetalSpots complete")
-	Sleep()
+	ConditionalSleep()
 	SetTreeDensity(params, cells)
 	EchoProgress("SetTreeDensity complete")
-	Sleep()
+	ConditionalSleep()
 	
 	EchoProgress("Terrain structure complete")
-	Sleep()
+	ConditionalSleep()
 	
 	return cells, edges, edgesSorted, heightMod, waveFunc, waveHeightMult, tiers, tierConst, tierHeight, tierMin, tierMax, startCell
 end
@@ -3550,6 +3583,9 @@ local function MakeHeightmap(cells, edges, heightMod, waveFunc, waveHeightMult, 
 	end
 	EchoProgress("EnforceSeaBorder complete")
 
+	while not GG.mapGenAtFullSpeed do
+		ConditionalSleep()
+	end
 	Spring.ClearWatchDogTimer()
 	TerraformByHeights(smoothHeights)
 	GG.mapgen_origHeight = smoothHeights
@@ -3569,7 +3605,7 @@ local waitCount = 0
 local newParams = {
 	startPoint = false,
 	startPointSize = false,
-	vorPoints = 38,
+	vorPoints = 40,
 	vorPointsRand = 0,
 	vorSizePointMult = 0,
 	vorSizePointMultRand = 0,
@@ -3594,7 +3630,7 @@ local newParams = {
 	iglooMaxHeightTierDiffMult = 60,
 	iglooMaxHeightVar = 0.2,
 	highDiffParallelIglooChance = 0.5,
-	steepSmallCliffWidth = 8,
+	steepSmallCliffWidth = 4,
 	cliffBotWidth = 60,
 	steepCliffWidth = 12,
 	seaBorderWidth = 30,
@@ -3701,7 +3737,7 @@ end
 
 local function MakeMap()
 	local params = Spring.Utilities.CopyTable(newParams)
-	params.vorPoints = math.ceil(params.vorPoints * useMapArea)
+	params.vorPoints = math.ceil(params.vorPoints * (0.25 + 0.75*useMapArea))
 	params.xBuffer = math.ceil((MAP_X - math.sqrt(useMapArea) * MAP_X) / (2 * SQUARE_SIZE)) * SQUARE_SIZE
 	params.zBuffer = math.ceil((MAP_Z - math.sqrt(useMapArea) * MAP_Z) / (2 * SQUARE_SIZE)) * SQUARE_SIZE
 	
@@ -3718,9 +3754,8 @@ local function MakeMap()
 		{{  mapLeft, -10*MAP_Z}, { mapLeft, 10*MAP_Z}},
 		{{ mapRight, -10*MAP_Z}, {mapRight, 10*MAP_Z}},
 	}
-	--local randomSeed = GetSeed()
-	--randomSeed = 6576411
-	--math.randomseed(randomSeed)
+	local randomSeed = GetSeed()
+	math.randomseed(randomSeed)
 
 	Spring.SetGameRulesParam("typemap", "temperate2")
 	Spring.SetGameRulesParam("mapgen_enabled", 1)
@@ -3745,7 +3780,7 @@ local function MakeMap()
 	end
 	
 	EchoProgress("Metal generation complete")
-	GG.rk_MapGenerationComplete()
+	GG.rk_MapGenerationComplete(startCell, cells, edges)
 end
 
 function GG.GenerateNewMap(newUseMapArea)

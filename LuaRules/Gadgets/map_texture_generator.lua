@@ -315,6 +315,7 @@ local function SetMapTexture(texturePool, mapTexX, mapTexZ, topTexX, topTexZ, to
 
 		cur = Spring.GetTimer()
 		Spring.Echo("Specular rendered in "..(Spring.DiffTimers(cur, ago, true)))
+		Sleep()
 
 		Spring.Echo("Starting to render SquareTextures")
 		local splattex = USE_SHADING_TEXTURE and gl.CreateTexture(MAP_X, MAP_Z,

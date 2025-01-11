@@ -184,7 +184,6 @@ local function InitialiseUnitEntry(holder, unitFuncs, unitData)
 			caption = comboName,
 			padding = {0, 0, 0, 0},
 		}
-		SetButtonState(comboCtrl, true)
 		unitFuncs.AddItem(unitData.combo.name, unitData.combo.level, "combo")
 	else
 		turretCtrl = Button:New {
@@ -346,9 +345,9 @@ local function GetUnitEntry(parent, index)
 	local internalFuncs = {}
 	local externalFuncs = {}
 	
-	local function IsItemCompatible(newItem)
+	local function IsItemCompatible(newItem, existingItem)
 		-- TODO: eg no +damage on constructors, or experience from lasers or laser-weilders.
-		return true
+		return not existingItem
 	end
 	
 	local function UpdateName()
@@ -368,25 +367,25 @@ local function GetUnitEntry(parent, index)
 	
 	function internalFuncs.AddItem(item, level, slotType, slotIndex)
 		local added = false
-		if slotType == "turret" and itemDefs[item].isTurret and IsItemCompatible(item) then
+		if slotType == "turret" and itemDefs[item].isTurret and IsItemCompatible(item, unitData.turret) then
 			unitData.turret = unitData.turret or {}
 			unitData.turret.name = item
 			unitData.turret.level = (unitData.turret.level or 0) + level
 			added = true
 			UpdateName()
-		elseif slotType == "mount" and itemDefs[item].isMount and IsItemCompatible(item) then
+		elseif slotType == "mount" and itemDefs[item].isMount and IsItemCompatible(item, unitData.mount) then
 			unitData.mount = unitData.mount or {}
 			unitData.mount.name = item
 			unitData.mount.level = (unitData.mount.level or 0) + level
 			added = true
 			UpdateName()
-		elseif slotType == "combo" and itemDefs[item].isCombo and IsItemCompatible(item) then
+		elseif slotType == "combo" and itemDefs[item].isCombo and IsItemCompatible(item, unitData.combo) then
 			unitData.combo = unitData.combo or {}
 			unitData.combo.name = item
 			unitData.combo.level = (unitData.combo.level or 0) + level
 			added = true
 			UpdateName()
-		elseif slotType == "module" and itemDefs[item].isModule and IsItemCompatible(item) then
+		elseif slotType == "module" and itemDefs[item].isModule and IsItemCompatible(item, unitData.modules[slotIndex]) then
 			unitData.modules[slotIndex] = unitData.modules[slotIndex] or {}
 			unitData.modules[slotIndex].name = item
 			unitData.modules[slotIndex].level = (unitData.modules[slotIndex].level or 0) + level

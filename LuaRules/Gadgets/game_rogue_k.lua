@@ -18,7 +18,7 @@ if (gadgetHandler:IsSyncedCode()) then
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-local shopDefs = VFS.Include("LuaRules/Configs/rk_shop.lua")
+local shopDefs = VFS.Include("LuaRules/Configs/rk_shop_def.lua")
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -194,6 +194,7 @@ local function StartNextRound()
 		local teamID = playerTeamList[i]
 		SetupTeamShop(teamID, roundDef)
 	end
+	GG.mapGenAtFullSpeed = false
 	GG.GenerateNewMap(roundDef.mapSize)
 	SetGlobalLos(true)
 end
@@ -220,12 +221,14 @@ local function SendNextRoundAndBuild(cmd, line, words, player)
 		return
 	end
 	buildData[teamID] = DeserialiseBuild(words)
+	
+	GG.mapGenAtFullSpeed = true
 end
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-function GG.rk_MapGenerationComplete()
+function GG.rk_MapGenerationComplete(startCell, cells, edges)
 	SetGlobalLos(false)
 	Spring.SetGameRulesParam("map_texture_generate_count", roundNumber)
 end
@@ -238,6 +241,10 @@ function gadget:Initialize()
 	
 	gadgetHandler:AddChatAction("rk_new_game", NewGame)
 	gadgetHandler:AddChatAction("rk_send_next_round_and_build", SendNextRoundAndBuild)
+end
+
+function gadget:AllowStartPosition(playerID, teamID, readyState, x, y, z, rx, ry, rz)
+	return false
 end
 
 --------------------------------------------------------------------------------
