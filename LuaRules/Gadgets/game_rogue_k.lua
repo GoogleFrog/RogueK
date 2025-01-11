@@ -27,6 +27,8 @@ local shopDefs = VFS.Include("LuaRules/Configs/rk_shop.lua")
 GG.MOD_MISSION = true
 
 local roundNumber = false
+local buildData = {}
+
 local playerTeamList = {}
 do
 	local teamList = Spring.GetTeamList()
@@ -55,18 +57,57 @@ local function SetupTeamShop(teamID, roundDef)
 				local name = roundDef.prescribeShop[index]
 				perkCount[name] = (perkCount[name] or 0) + 1
 				Spring.SetTeamRulesParam(teamID, "rk_shop_item_" .. i .. "_" .. j, perks[name][perkCount[name]])
+				Spring.SetTeamRulesParam(teamID, "rk_shop_item_level_" .. i .. "_" .. j, 1)
 			end
 			index = index + 1
 		end
 	end
 end
 
+local function SetBuildRulesParams(teamID)
+	local build = buildData[teamID]
+	for i = 1, #build.units do
+		local unit = build.units[i]
+		if unit.combo then
+			Spring.SetTeamRulesParam(teamID, "rk_unit_combo_" .. i, unit.combo.name)
+			Spring.SetTeamRulesParam(teamID, "rk_unit_combo_level_" .. i, unit.combo.level)
+		end
+		if unit.turret then
+			Spring.SetTeamRulesParam(teamID, "rk_unit_turret_" .. i, unit.turret.name)
+			Spring.SetTeamRulesParam(teamID, "rk_unit_turret_level_" .. i, unit.turret.level)
+		end
+		if unit.mount then
+			Spring.SetTeamRulesParam(teamID, "rk_unit_mount_" .. i, unit.mount.name)
+			Spring.SetTeamRulesParam(teamID, "rk_unit_mount_level_" .. i, unit.mount.level)
+		end
+		for j = 1, #unit.modules do
+			local mod = unit.modules[j]
+			Spring.SetTeamRulesParam(teamID, "rk_unit_module_" .. i .. "_" .. j, mod.name)
+			Spring.SetTeamRulesParam(teamID, "rk_unit_module_level_" .. i .. "_" .. j, mod.level)
+		end
+	end
+	
+	for i = 1, #build.perks do
+		local perk = build.perks[i]
+		Spring.SetTeamRulesParam(teamID, "rk_perk_" .. i, perk.name)
+		Spring.SetTeamRulesParam(teamID, "rk_perk_level_" .. i, perk.level)
+	end
+end
+
 local function InitPlayerTeam(teamID)
-	Spring.SetTeamRulesParam(teamID, "rk_unit_combo_1", "combo_vehcon")
-	Spring.SetTeamRulesParam(teamID, "rk_perk_1", "perk_unit_limit")
-	Spring.SetTeamRulesParam(teamID, "rk_perk_level_1", 5)
-	Spring.SetTeamRulesParam(teamID, "rk_perk_2", "perk_module_limit")
-	Spring.SetTeamRulesParam(teamID, "rk_perk_level_2", 2)
+	buildData[teamID] = {
+		units = {
+			{
+				combo = {name = "combo_vehcon", level = 1},
+				modules = {},
+			}
+		},
+		perks = {
+			{name = "perk_unit_limit", level = 5},
+			{name = "perk_module_limit", level = 2},
+		},
+	}
+	SetBuildRulesParams(teamID)
 end
 
 local function StartNextRound()
@@ -96,12 +137,25 @@ local function NewGame(cmd, line, words, player)
 	StartNextRound()
 end
 
-local function SendUnitSpec(cmd, line, words, player)
-	Spring.Echo(cmd)
-	Spring.Echo(line)
-	Spring.Echo(words)
-	Spring.Echo(player)
-	--msg = Spring.Utilities.ExplodeString('|', msg)
+local function NextRoundAndChoices(cmd, line, words, player)
+	if not words then
+		return
+	end
+	local name, active, spectator, teamID = Spring.GetPlayerInfo(player)
+	if spectator then
+		return
+	end
+	local unitCount = words[1] or 0
+	local perkCount = words[2] or 0
+	local invCount = words[3] or 0
+	
+	for i = 1, #words do
+		Spring.Echo(words[i])
+	end
+	--msg = Spring.Utilities.ExplodeString('|', words[4])
+	--for i = 1, #msg do
+	--	Spring.Echo(msg[i])
+	--end
 end
 
 
@@ -116,8 +170,7 @@ function gadget:Initialize()
 	Spring.SetGameRulesParam("is_mod_mission", 1)
 	
 	gadgetHandler:AddChatAction("rk_new_game", NewGame)
-	gadgetHandler:AddChatAction("rk_send_unit_spec", SendUnitSpec)
-	gadgetHandler:AddChatAction("rk_send_perk_spec", SendPerkSpec)
+	gadgetHandler:AddChatAction("rk_next_round_and_choices", NextRoundAndChoices)
 end
 
 --------------------------------------------------------------------------------

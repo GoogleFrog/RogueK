@@ -65,6 +65,8 @@ local oldShopOpen = false
 local mainWindow = false
 local activeButton = false
 local activeItem = false
+local activeLevel = false
+
 local armyFunctions = false
 local perkFunctions = false
 local wantFullReset = false
@@ -112,9 +114,10 @@ local function GetShopName(shopItem)
 	return shopName
 end
 
-local function SetActiveItem(newItem)
+local function SetActiveItem(newItem, newLevel)
 	if not newItem then
 		activeItem = false
+		activeLevel = false
 		if activeButton then
 			screen0:RemoveChild(activeButton)
 		end
@@ -133,6 +136,7 @@ local function SetActiveItem(newItem)
 		activeButton.HitTest = function (self, x, y) return false end
 	end
 	activeItem = newItem
+	activeLevel = newLevel
 	activeButton:SetCaption(GetShopName(newItem))
 	activeButton:Invalidate()
 	screen0:AddChild(activeButton)
@@ -142,7 +146,7 @@ end
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-local function MakeModuleEntry(holder, i, item, unitFuncs)
+local function MakeModuleEntry(holder, i, item, level, unitFuncs)
 	local moduleCtrl = Button:New {
 		parent = holder,
 		x = ARMY_BUTTON_SIZE + 45 + i*ARMY_BUTTON_SIZE,
@@ -154,7 +158,7 @@ local function MakeModuleEntry(holder, i, item, unitFuncs)
 	}
 	if item then
 		moduleCtrl:SetCaption(GetShopName(item))
-		unitFuncs.AddItem(item, "module", i)
+		unitFuncs.AddItem(item, level, "module", i)
 	else
 		moduleCtrl.OnClick = {function (self)
 			unitFuncs.OnClickEmptySlot(self, "module", i)
@@ -163,11 +167,14 @@ local function MakeModuleEntry(holder, i, item, unitFuncs)
 	return moduleCtrl
 end
 
-local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modules)
+local function InitialiseUnitEntry(holder, unitFuncs, unitData)
+	if not unitData then
+		return false
+	end
 	local teamID = Spring.GetMyTeamID()
 	local comboCtrl, turretCtrl, mountCtrl = false, false, false
-	if combo then
-		local comboName = itemDefs[combo].humanName
+	if unitData.combo then
+		local comboName = itemDefs[unitData.combo.name].humanName
 		comboCtrl = Button:New {
 			parent = holder,
 			x = 25,
@@ -178,7 +185,7 @@ local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modu
 			padding = {0, 0, 0, 0},
 		}
 		SetButtonState(comboCtrl, true)
-		unitFuncs.AddItem(combo, "combo")
+		unitFuncs.AddItem(unitData.combo.name, unitData.combo.level, "combo")
 	else
 		turretCtrl = Button:New {
 			parent = holder,
@@ -198,17 +205,17 @@ local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modu
 			caption = "chassis",
 			padding = {0, 0, 0, 0},
 		}
-		if turret then
-			turretCtrl:SetCaption(GetShopName(turret))
-			unitFuncs.AddItem(turret, "turret")
+		if unitData.turret then
+			turretCtrl:SetCaption(GetShopName(unitData.turret.name))
+			unitFuncs.AddItem(unitData.turret.name, unitData.turret.level, "turret")
 		else
 			turretCtrl.OnClick = {function (self)
 				unitFuncs.OnClickEmptySlot(self, "turret")
 			end}
 		end
-		if mount then
-			mountCtrl:SetCaption(GetShopName(mount))
-			unitFuncs.AddItem(mount, "mount")
+		if unitData.mount then
+			mountCtrl:SetCaption(GetShopName(unitData.mount.name))
+			unitFuncs.AddItem(unitData.mount.name, unitData.mount.level, "mount")
 		else
 			mountCtrl.OnClick = {function (self)
 				unitFuncs.OnClickEmptySlot(self, "mount")
@@ -218,11 +225,12 @@ local function InitialiseUnitEntry(holder, unitFuncs, combo, turret, mount, modu
 	
 	local moduleCtrls = {}
 	for i = 1, perkFunctions.GetModuleLimit() do
-		local item = modules and modules[i]
-		moduleCtrls[i] = MakeModuleEntry(holder, i, item, unitFuncs)
+		local item = unitData.modules and unitData.modules[i]
+		moduleCtrls[i] = MakeModuleEntry(holder, i, item and item.name, item and item.level, unitFuncs)
 	end
 	
 	unitFuncs.RegisterItemControls(comboCtrl, turretCtrl, mountCtrl, moduleCtrls)
+	return true
 end
 
 local function InitialiseEmptyUnit(holder, unitFuncs)
@@ -231,15 +239,28 @@ local function InitialiseEmptyUnit(holder, unitFuncs)
 		if activeItem then
 			local activeDef = itemDefs[activeItem]
 			if activeDef.isCombo or activeDef.isTurret or activeDef.isMount then
+				local unitData = {
+					modules = {},
+				}
 				if activeDef.isCombo then
-					InitialiseUnitEntry(holder, unitFuncs, activeItem, false, false)
+					unitData.combo = {
+						name = activeItem,
+						level = activeLevel,
+					}
 				end
 				if activeDef.isTurret then
-					InitialiseUnitEntry(holder, unitFuncs, false, activeItem, false)
+					unitData.turret = {
+						name = activeItem,
+						level = activeLevel,
+					}
 				end
 				if activeDef.isMount then
-					InitialiseUnitEntry(holder, unitFuncs, false, false, activeItem)
+					unitData.mount = {
+						name = activeItem,
+						level = activeLevel,
+					}
 				end
+				InitialiseUnitEntry(holder, unitFuncs, unitData)
 				newUnit:Dispose()
 				SetActiveItem(false)
 			end
@@ -258,6 +279,43 @@ local function InitialiseEmptyUnit(holder, unitFuncs)
 		end},
 		padding = {0, 0, 0, 0},
 	}
+end
+
+local function ReadUnitDataParams(teamID, index)
+	local unitData = {
+		modules = {},
+	}
+	local combo = Spring.GetTeamRulesParam(teamID, "rk_unit_combo_" .. index)
+	local mount = Spring.GetTeamRulesParam(teamID, "rk_unit_mount_" .. index)
+	local turret = Spring.GetTeamRulesParam(teamID, "rk_unit_turret_" .. index)
+	if combo then
+		unitData.combo = {
+			name = combo,
+			level = Spring.GetTeamRulesParam(teamID, "rk_unit_combo_level_" .. index) or 1
+		}
+	end
+	if mount then
+		unitData.mount = {
+			name = mount,
+			level = Spring.GetTeamRulesParam(teamID, "rk_unit_mount_level_" .. index) or 1
+		}
+	end
+	if turret then
+		unitData.turret = {
+			name = turret,
+			level = Spring.GetTeamRulesParam(teamID, "rk_unit_turret_level_" .. index) or 1
+		}
+	end
+	for i = 1, perkFunctions.GetModuleLimit() do
+		unitData.modules[i] = {
+			name = Spring.GetTeamRulesParam(teamID, "rk_unit_module_" .. index .. "_" .. i),
+			level = Spring.GetTeamRulesParam(teamID, "rk_unit_module_level_" .. index .. "_" .. i),
+		}
+	end
+	if not (unitData.combo or unitData.mount or unitData.turret) then
+		return false
+	end
+	return unitData
 end
 
 local function GetUnitEntry(parent, index)
@@ -281,15 +339,9 @@ local function GetUnitEntry(parent, index)
 	}
 	
 	local comboCtrl, turretCtrl, mountCtrl, moduleCtrls = false, false, false, false, {}
-	
-	local combo = Spring.GetTeamRulesParam(teamID, "rk_unit_combo_" .. index)
-	local mount = (not combo) and Spring.GetTeamRulesParam(teamID, "rk_unit_mount_" .. index)
-	local turret = (not combo) and Spring.GetTeamRulesParam(teamID, "rk_unit_turret_" .. index)
-	local modules = {}
-	
-	for i = 1, perkFunctions.GetModuleLimit() do
-		modules[i] = Spring.GetTeamRulesParam(teamID, "rk_unit_module_" .. index .. "_" .. i)
-	end
+	local unitData = {
+		modules = {},
+	}
 	
 	local internalFuncs = {}
 	local externalFuncs = {}
@@ -303,33 +355,41 @@ local function GetUnitEntry(parent, index)
 		if not nameCtrl then
 			return
 		end
-		if turret and mount then
-			nameCtrl:SetText(itemDefs[turret].humanName .. itemDefs[mount].humanName)
-		elseif turret then
-			nameCtrl:SetText(GetShopName(turret))
-		elseif mount then
-			nameCtrl:SetText(GetShopName(mount))
-		elseif combo then
-			nameCtrl:SetText(GetShopName(combo))
+		if unitData.turret and unitData.mount then
+			nameCtrl:SetText(itemDefs[unitData.turret.name].humanName .. itemDefs[unitData.mount.name].humanName)
+		elseif unitData.turret then
+			nameCtrl:SetText(GetShopName(unitData.turret.name))
+		elseif unitData.mount then
+			nameCtrl:SetText(GetShopName(unitData.mount.name))
+		elseif unitData.combo then
+			nameCtrl:SetText(GetShopName(unitData.combo.name))
 		end
 	end
 	
-	function internalFuncs.AddItem(item, slotType, slotIndex)
+	function internalFuncs.AddItem(item, level, slotType, slotIndex)
 		local added = false
 		if slotType == "turret" and itemDefs[item].isTurret and IsItemCompatible(item) then
-			turret = item
+			unitData.turret = unitData.turret or {}
+			unitData.turret.name = item
+			unitData.turret.level = (unitData.turret.level or 0) + level
 			added = true
 			UpdateName()
 		elseif slotType == "mount" and itemDefs[item].isMount and IsItemCompatible(item) then
-			mount = item
+			unitData.mount = unitData.mount or {}
+			unitData.mount.name = item
+			unitData.mount.level = (unitData.mount.level or 0) + level
 			added = true
 			UpdateName()
 		elseif slotType == "combo" and itemDefs[item].isCombo and IsItemCompatible(item) then
-			combo = item
+			unitData.combo = unitData.combo or {}
+			unitData.combo.name = item
+			unitData.combo.level = (unitData.combo.level or 0) + level
 			added = true
 			UpdateName()
 		elseif slotType == "module" and itemDefs[item].isModule and IsItemCompatible(item) then
-			modules[slotIndex] = item
+			unitData.modules[slotIndex] = unitData.modules[slotIndex] or {}
+			unitData.modules[slotIndex].name = item
+			unitData.modules[slotIndex].level = (unitData.modules[slotIndex].level or 0) + level
 			added = true
 		end
 		return added
@@ -343,15 +403,13 @@ local function GetUnitEntry(parent, index)
 		if not activeItem then
 			return
 		end
-		if internalFuncs.AddItem(activeItem, slotType, slotIndex) then
+		if internalFuncs.AddItem(activeItem, activeLevel, slotType, slotIndex) then
 			slotCtrl:SetCaption(GetShopName(activeItem))
 			SetActiveItem(false)
 		end
 	end
 	
-	if (combo or mount or turret) then
-		InitialiseUnitEntry(holder, internalFuncs, combo, turret, mount, modules)
-	else
+	if not InitialiseUnitEntry(holder, internalFuncs, ReadUnitDataParams(teamID, index)) then
 		InitialiseEmptyUnit(holder, internalFuncs)
 	end
 	
@@ -360,7 +418,7 @@ local function GetUnitEntry(parent, index)
 			if moduleCtrls then
 				for i = 1, perkFunctions.GetModuleLimit() do
 					if not moduleCtrls[i] then
-						moduleCtrls[i] = MakeModuleEntry(holder, i, false, internalFuncs)
+						moduleCtrls[i] = MakeModuleEntry(holder, i, false, false, internalFuncs)
 					end
 				end
 			end
@@ -368,23 +426,23 @@ local function GetUnitEntry(parent, index)
 	end
 	
 	function externalFuncs.Serialise()
-		if not (combo or turret or mount) then
+		if not (unitData.combo or unitData.turret or unitData.mount) then
 			return false
 		end
 		local unitStr = ""
-		if combo then
-			unitStr = unitStr .. "combo|" .. combo .. "|"
+		if unitData.combo then
+			unitStr = unitStr .. "combo|" .. unitData.combo.name .. "|" .. unitData.combo.level .. "|"
 		end
-		if turret then
-			unitStr = unitStr .. "turret|" .. turret .. "|"
+		if unitData.turret then
+			unitStr = unitStr .. "turret|" .. unitData.turret.name .. "|" .. unitData.turret.level .. "|"
 		end
-		if mount then
-			unitStr = unitStr .. "mount|" .. mount .. "|"
+		if unitData.mount then
+			unitStr = unitStr .. "mount|" .. unitData.mount.name .. "|" .. unitData.mount.level .. "|"
 		end
 		unitStr = unitStr .. "modules"
-		for i = 1, moduleLimit do
-			if modules[i] then
-				unitStr = "|" .. modules[i]
+		for i = 1, perkFunctions.GetModuleLimit() do
+			if unitData.modules[i] then
+				unitStr = "|" .. unitData.modules[i].name .. "|" .. unitData.modules[i].level
 			end
 		end
 		return unitStr
@@ -459,13 +517,20 @@ local function GetArmyWindow(parent)
 		if activeItem then
 			local newItem = inventory[index]
 			invButtons[index].caption = GetShopName(activeItem)
-			inventory[index] = activeItem
+			inventory[index] = {
+				name = activeItem,
+				level = activeLevel,
+			}
 			SetButtonState(invButtons[index], false)
-			SetActiveItem(newItem)
+			if newItem then
+				SetActiveItem(newItem.name, newItem.level)
+			else
+				SetActiveItem(false)
+			end
 		elseif inventory[index] then
 			invButtons[index].caption = GetShopName(false)
 			SetButtonState(invButtons[index], true)
-			SetActiveItem(inventory[index])
+			SetActiveItem(inventory[index].name, inventory[index].level)
 			inventory[index] = false
 		end
 	end
@@ -474,8 +539,12 @@ local function GetArmyWindow(parent)
 	for j = 1, inventoryHeight do
 		for i = 1, INV_WIDTH do
 			local item = Spring.GetTeamRulesParam(teamID, "rk_inv_item_" .. invIndex) or false
+			local level = Spring.GetTeamRulesParam(teamID, "rk_inv_item_level_" .. invIndex) or 0
 			invButtons[invIndex] = AddInventoryButton(inventoryPanel, teamID, item, i, j, invIndex, ClickInventoryButtion)
-			inventory[invIndex] = item
+			inventory[invIndex] = item and {
+				name = item,
+				level = level,
+			}
 			invIndex = invIndex + 1
 		end
 	end
@@ -497,11 +566,13 @@ local function GetArmyWindow(parent)
 	end
 	
 	local externalFuncs = {}
-	function externalFuncs.AddToInventory(item)
-		Spring.Echo("inventory", inventory, #inventory)
+	function externalFuncs.AddToInventory(item, level)
 		for i = 1, #inventory do
 			if not inventory[i] then
-				inventory[i] = item
+				inventory[i] = {
+					name = item,
+					level = level,
+				}
 				invButtons[i].caption = GetShopName(item)
 				SetButtonState(invButtons[i], false)
 				return
@@ -509,9 +580,11 @@ local function GetArmyWindow(parent)
 		end
 		inventoryHeight = inventoryHeight + 1
 		for i = 1, INV_WIDTH do
-			local toAdd = (i == 1) and item
 			invButtons[invIndex] = AddInventoryButton(inventoryPanel, teamID, toAdd, i, inventoryHeight, invIndex, ClickInventoryButtion)
-			inventory[invIndex] = toAdd
+			inventory[invIndex] = (i == 1) and {
+				name = item,
+				level = level,
+			}
 			invIndex = invIndex + 1
 		end
 	end
@@ -534,6 +607,16 @@ local function GetArmyWindow(parent)
 		local serialised = {}
 		for i = 1, #units do
 			serialised[i] = units[i].Serialise()
+		end
+		return serialised
+	end
+	
+	function externalFuncs.SerialiseInventory(item)
+		local serialised = {}
+		for i = 1, #inventory do
+			if inventory[i] then
+				serialised[#serialised + 1] = inventory[i].name .. "|" .. inventory[i].level
+			end
 		end
 		return serialised
 	end
@@ -572,7 +655,7 @@ local function GetPerkWindow(parent)
 		end
 	end
 	
-	function externalFuncs.AddPerk(item, levels)
+	function externalFuncs.AddPerk(item, level)
 		if not perkLevel[item] then
 			local px = #perks % 3
 			local py = (#perks - px) / 3
@@ -588,7 +671,7 @@ local function GetPerkWindow(parent)
 			perks[#perks + 1] = item
 			perkButtons[item] = button
 		end
-		perkLevel[item] = (perkLevel[item] or 0) + (levels or 1)
+		perkLevel[item] = (perkLevel[item] or 0) + (level or 1)
 		UpdateCache(item)
 		if armyFunctions then
 			armyFunctions.NotifyArmyPerkUpdate(item)
@@ -613,6 +696,14 @@ local function GetPerkWindow(parent)
 	
 	function externalFuncs.GetModuleLimit()
 		return cachedParameters.moduleLimit or 1
+	end
+	
+	function externalFuncs.SerialisePerks(item)
+		local serialised = {}
+		for i = 1, #perks do
+			serialised[i] = perks[i] .. "|" .. perkLevel[perks[i]]
+		end
+		return serialised
 	end
 	
 	return externalFuncs
@@ -651,6 +742,7 @@ local function GetBuyWindow(parent)
 	local shopHeight = Spring.GetGameRulesParam("rk_shop_height")
 	local buttons = {}
 	local shopItems = {}
+	local shopItemLevel = {}
 	local selectionMade = false
 	
 	local resetButton = Button:New {
@@ -712,7 +804,7 @@ local function GetBuyWindow(parent)
 				local button = buttons[i][j]
 				if i == x or j == y then
 					button.caption = ""
-					armyFunctions.AddToInventory(shopItems[i][j])
+					armyFunctions.AddToInventory(shopItems[i][j], shopItemLevel[i][j])
 				end
 				SetButtonState(button, true)
 			end
@@ -722,8 +814,10 @@ local function GetBuyWindow(parent)
 	for i = 1, shopWidth do
 		buttons[i] = {}
 		shopItems[i] = {}
+		shopItemLevel[i] = {}
 		for j = 1, shopHeight do
 			local shopItem = Spring.GetTeamRulesParam(teamID, "rk_shop_item_" .. i .. "_" .. j)
+			local level = Spring.GetTeamRulesParam(teamID, "rk_shop_item_level_" .. i .. "_" .. j)
 			local button = Button:New {
 				x = i*80,
 				y = j*80,
@@ -749,6 +843,7 @@ local function GetBuyWindow(parent)
 			}
 			buttons[i][j] = button
 			shopItems[i][j] = shopItem
+			shopItemLevel[i][j] = level
 		end
 	end
 	
@@ -824,11 +919,19 @@ end
 
 local function SendFactionSpec()
 	local units = armyFunctions.SerialiseUnits()
+	local perks = perkFunctions.SerialisePerks()
+	local inventory = armyFunctions.SerialiseInventory()
+	local sendData = #units .. " " .. #perks .. " " .. #inventory
 	for i = 1, #units do
-		if units[i] then
-			Spring.SendCommands("luarules rk_send_unit_spec " .. i .. " " .. units[i])
-		end
+		sendData = sendData .. " " .. (units[i] or "nounit")
 	end
+	for i = 1, #perks do
+		sendData = sendData .. " " .. (perks[i] or "noperk")
+	end
+	for i = 1, #inventory do
+		sendData = sendData .. " " .. inventory[i]
+	end
+	Spring.SendCommands("luarules rk_next_round_and_choices " .. sendData)
 end
 
 --------------------------------------------------------------------------------
