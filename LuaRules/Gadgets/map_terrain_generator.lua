@@ -25,9 +25,9 @@ local MAKE_IGLOO = true
 local SYMMETRY = false
 local MIN_HEIGHT = -110
 
-local DRAW_EDGES = false
+local DRAW_EDGES = true
 local PRINT_TIERS = false
-local PRINT_CONNECTION = false
+local PRINT_CONNECTION = true
 local PRINT_IGLOOS = false
 local PRINT_MEX_ALLOC = false
 local PRINT_CURVES = false
@@ -3715,23 +3715,25 @@ local newParams = {
 	iglooMaxHeightBase = 150,
 	iglooMaxHeightTierDiffMult = 60,
 	iglooMaxHeightVar = 0.2,
-	highDiffParallelIglooChance = 0.5,
-	steepCliffChance = 0.85,
-	bigDiffSteepCliffChance = 0.75,
-	rampChance = 0.4,
-	bigDiffRampChance = 0.3,
-	bigDiffRampReduction = 0.05,
-	impassEdgeThreshold = 420,
+	
 	tierConst = 42,
 	tierHeight = 60,
 	vehPassTiers = 2, -- Update based on tierHeight
 	
-	smallCliffChance = 0.45,
+	highDiffParallelIglooChance = 0.5,
+	steepCliffChance = 0.85,
+	bigDiffSteepCliffChance = 0.75,
+	rampChance = 0.35,
+	bigDiffRampChance = 0.3,
+	bigDiffRampReduction = 0.05,
+	impassEdgeThreshold = 420,
+	smallCliffChance = 0.55,
 	smallBotRampChance = 0.65,
+	
 	steepSmallCliffWidth = 4,
 	steepCliffWidth = 10,
 	smallBotRampWidth = 85,
-	cliffBotWidth = 70,
+	cliffBotWidth = 55,
 	seaBorderWidth = 30,
 	smallRampWidth = 160,
 	smallRampWidthMax = 220,
@@ -3811,7 +3813,7 @@ local function MakeMap()
 		{{ mapRight, -10*MAP_Z}, {mapRight, 10*MAP_Z}},
 	}
 	
-	local randomSeed = GetSeed()
+	local randomSeed = 7657349 -- GetSeed()
 	math.randomseed(randomSeed)
 
 	Spring.SetGameRulesParam("typemap", "temperate2")
