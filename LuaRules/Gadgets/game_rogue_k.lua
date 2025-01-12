@@ -29,7 +29,10 @@ GG.MOD_MISSION = true
 local FACTORY_ID = UnitDefNames["rogue_factory"].id
 
 local BATTLE_START_DELAY = 40
+
 local BUILD_RESOLUTION = 16
+local MAP_X = Game.mapSizeX
+local MAP_Z = Game.mapSizeZ
 
 local roundNumber = false
 local loadoutData = {}
@@ -355,7 +358,7 @@ end
 local function SpawnPlayerBase(teamID)
 	local centerX, centerZ = mapGenData.startCell.site[1], mapGenData.startCell.site[2]
 	local x, z = GetClearBuildingPlacement(FACTORY_ID, centerX, centerZ, 300, 1)
-	unitID = Spring.CreateUnit(FACTORY_ID, x, Spring.GetGroundHeight(x, z), z, 1, teamID, false, true)
+	unitID = Spring.CreateUnit(FACTORY_ID, x, Spring.GetGroundHeight(x, z), z, 1, teamID, false, false)
 end
 
 local function StartBattle()
@@ -394,6 +397,7 @@ local function CheckStartBattle()
 		SetLoadoutRulesParams(teamID)
 	end
 	startBattleTimer = BATTLE_START_DELAY
+	SetGlobalLos(false)
 end
 
 local function SendNextRoundAndLoadout(cmd, line, words, player)
@@ -418,7 +422,6 @@ function GG.rk_MapGenerationComplete(startCell, cells, edges)
 	mapGenData.cells = cells
 	mapGenData.edges = edges
 	
-	SetGlobalLos(false)
 	Spring.SetGameRulesParam("map_texture_generate_count", roundNumber)
 	mapGenerated = true
 	CheckStartBattle()

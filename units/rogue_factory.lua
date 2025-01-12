@@ -1,7 +1,7 @@
 return { rogue_factory = {
   name                          = [[Factory]],
   description                   = [[Produces Units]],
-  buildDistance                 = Shared.FACTORY_PLATE_RANGE,
+  buildDistance                 = 0,
   builder                       = true,
   buildingGroundDecalDecaySpeed = 30,
   buildingGroundDecalSizeX      = 10,
@@ -32,6 +32,7 @@ return { rogue_factory = {
     sortName = [[5]],
     modelradius    = [[60]],
     solid_factory = [[3]],
+    mobilebuilding = [[1]],
     unstick_help   = 1,
     factorytab       = 1,
     shared_energy_gen = 1,
@@ -43,7 +44,7 @@ return { rogue_factory = {
     outline_yoff = 5,
   },
 
-  energyMake                    = 25,
+  energyMake                    = 40,
   energyStorage                 = 500,
   explodeAs                     = [[LARGE_BUILDINGEX]],
   footprintX                    = 7,
@@ -53,8 +54,8 @@ return { rogue_factory = {
   levelGround                   = false,
   maxSlope                      = 25,
   maxWaterDepth                 = 0,
-  metalCost                     = Shared.FACTORY_COST,
-  metalmake                     = 10,
+  metalCost                     = 500,
+  metalmake                     = 5,
   metalStorage                  = 500,
   moveState                     = 1,
   noAutoFire                    = false,
@@ -64,7 +65,7 @@ return { rogue_factory = {
   showNanoSpray                 = false,
   sightDistance                 = 273,
   useBuildingGroundDecal        = true,
-  workerTime                    = Shared.FACTORY_BUILDPOWER,
+  workerTime                    = 25,
   yardMap                       = [[ooooooo ooooooo ooooooo ccccccc ccccccc ccccccc ccccccc]],
 
   featureDefs                   = {

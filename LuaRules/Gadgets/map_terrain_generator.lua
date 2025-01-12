@@ -21,17 +21,21 @@ end
 local MIN_EDGE_LENGTH = 10
 local SAME_POINT_LEEWAY = 2.5
 local DO_SMOOTHING = true
+local MAKE_IGLOO = false
 local DISABLE_TERRAIN_GENERATOR = false
 local RELOAD_REGEN = false
 
 local DRAW_EDGES = true
+local PRINT_CONNECTION = true
 local PRINT_TIERS = false
+
 local PRINT_MEX_ALLOC = false
 local PRINT_CURVES = false
 local SHOW_WAVEMAP = false
 local TIME_MAP_GEN = false
 
 local SYMMETRY = false
+local MIN_HEIGHT = -110
 
 -- Can be set by GG.GenerateNewMap
 local useMapArea = 1
@@ -784,19 +788,19 @@ local MAP_BORDER = {
 }
 
 local smoothFilter = {}
-for x = -32, 32, 8 do
-	for z = -32, 32, 8 do
+for x = -24, 24, 8 do
+	for z = -24, 24, 8 do
 		local short, long
 		if abs(x) < abs(z) then
 			short, long = abs(x), abs(z)
 		else
 			short, long = abs(z), abs(x)
 		end
-		if short == 0 and long == 32 then
+		if short == 0 and long == 24 then
 			smoothFilter[#smoothFilter + 1] = {x, z, 0.33}
-		elseif short == 8 and long == 32 then
+		elseif short == 8 and long == 24 then
 			smoothFilter[#smoothFilter + 1] = {x, z, 0.18}
-		elseif short == 16 and long == 24 then
+		elseif short == 8 and long == 16 then
 			smoothFilter[#smoothFilter + 1] = {x, z, 0.75}
 		elseif short + long <= 32 then
 			smoothFilter[#smoothFilter + 1] = {x, z, 1}
@@ -1955,7 +1959,6 @@ local function ApplyLineDistanceFunc(
 				
 				tierFlood.AddHeight(x, z, ((tangDist > 0) and cellTier) or otherTier, tangDistAbs)
 			end
-			
 			towardsCellTier, towardsOtherTier, waveMultMod = HeightFunc(heightParams, tangDist, projDist, lineLength, startWidth, endWidth, segStartWidth, segEndWidth, startDist, endDist, overshootStart, beyondFactor)
 			if towardsCellTier or towardsOtherTier or waveMultMod then
 				posIndex = GetPosIndex(x, z)
@@ -2120,7 +2123,7 @@ local function ProcessEdges(cells, edges)
 		end
 		ConditionalSleep()
 		
-		if thisEdge.iglooFunc then
+		if thisEdge.iglooFunc and not thisEdge.underwater then
 			GenerateEdgeTerrain(heightMod, waveMod, thisEdge)
 		end
 		Spring.ClearWatchDogTimer()
@@ -2336,6 +2339,8 @@ local function SetEdgeTierParameters(edge, minLandTier)
 	local hasHeightDiff = {}
 	edge.maxEndTierCount = 0
 	edge.minEndTierCount = 3
+	local maxEndTier = -100
+	local minEndTier = 100
 	for i = 1, #edge.neighbours do
 		local nbhd = edge.neighbours[i]
 		
@@ -2365,9 +2370,12 @@ local function SetEdgeTierParameters(edge, minLandTier)
 		if nbhd.endFace then
 			nbhd.lowTier = min(nbhd.endFace.tier, edge.lowTier)
 			nbhd.highTier = max(nbhd.endFace.tier, edge.highTier)
+			maxEndTier = max(maxEndTier, nbhd.endFace.tier)
+			minEndTier = min(minEndTier, nbhd.endFace.tier)
 		end
 		nbhd.tierDiff = nbhd.highTier - nbhd.lowTier
 	end
+	edge.endTierDiff = maxEndTier - minEndTier
 end
 
 local function SetEdgePassability(params, edge, minLandTier)
@@ -2393,38 +2401,44 @@ local function SetEdgePassability(params, edge, minLandTier)
 		end
 	end
 	
+	local defaultRampWidth = (edge.lowTier < minLandTier and edge.highTier >= minLandTier) and params.beachRampWidth or params.rampWidth
+	
 	if edge.underwater then
 		-- Always make a ramp.
-		edge.terrainWidth = params.rampWidth * edge.tierDiff
+		edge.terrainWidth = params.underwaterRampWidth * edge.tierDiff
 	elseif edge.tierDiff <= 1 then
 		if edge.tierDiff > 0 and random() < params.smallCliffChance then
 			edge.terrainWidth = params.steepSmallCliffWidth
+		elseif edge.tierDiff > 0 and random() < params.smallBotRampChance then
+			edge.terrainWidth = params.smallBotRampWidth
 		else
 			edge.terrainWidth = params.smallRampWidth
 		end
-	elseif edge.lowTier < minLandTier and edge.highTier >= minLandTier and edge.tierDiff >= 3 then
+	elseif edge.lowTier < minLandTier and edge.highTier >= minLandTier and edge.tierDiff >= 4 then
 		-- Always make a cliff
 		edge.terrainWidth = params.steepCliffWidth
 	elseif edge.length < params.impassEdgeThreshold and ((impassCount == 0) or (matchCount*0.7 - impassCount >= 0)) and 
 			(not edge.adjToStart) and random() < ((edge.touchBorder and 0.3) or 0.75) then
 		-- Make a cliff on short high tier difference edges
-		edge.terrainWidth = ((impassCount == 0) and params.rampWidth) or params.cliffBotWidth
+		edge.terrainWidth = ((impassCount == 0) and defaultRampWidth) or params.cliffBotWidth
 	elseif edge.tierDiff <= 2 then
 		if edge.adjToStart then
-			edge.terrainWidth = params.rampWidth
+			edge.terrainWidth = defaultRampWidth
 		elseif edge.touchBorder and impassCount == 0 then
-			edge.terrainWidth = ((random() < params.rampChance + 0.2) and params.rampWidth) or params.cliffBotWidth
+			edge.terrainWidth = ((random() < params.rampChance + 0.2) and defaultRampWidth) or params.cliffBotWidth
 		else
-			edge.terrainWidth = ((random() < params.rampChance) and params.rampWidth) or params.cliffBotWidth
+			edge.terrainWidth = ((random() < params.rampChance) and defaultRampWidth) or params.cliffBotWidth
 		end
+	elseif edge.lowTier < minLandTier then
+		edge.terrainWidth = params.cliffBotWidth
 	else
 		-- Make a ramp with reducing probability based on tier diff.
 		local chance = params.bigDiffRampChance - params.bigDiffRampReduction*(edge.tierDiff - 3)
-		edge.terrainWidth = ((random() < chance) and params.rampWidth) or params.cliffBotWidth
+		edge.terrainWidth = ((random() < chance) and defaultRampWidth) or params.cliffBotWidth
 	end
 	
 	-- Make a veh-pathable mega ramp.
-	if edge.terrainWidth >= params.rampWidth and edge.tierDiff >= 2 and edge.tierDiff <= 5 then
+	if edge.terrainWidth >= params.rampWidth and edge.tierDiff >= 2 and edge.tierDiff <= 5 and not (edge.lowTier < minLandTier) then
 		if edge.tierDiff >= 3 and edge.lowTier < minLandTier and random() < 0.95 then
 			edge.terrainWidth = edge.terrainWidth*1.45
 		else
@@ -2455,7 +2469,7 @@ local function SetEdgePassability(params, edge, minLandTier)
 			if random() < params.steepCliffChance then
 				edge.terrainWidth = params.steepCliffWidth
 			end
-		elseif random() < params.bigDiffSteepCliffChance then
+		elseif edge.tierDiff > 2 and random() < params.bigDiffSteepCliffChance then
 			edge.terrainWidth = params.steepCliffWidth
 		end
 	end
@@ -2469,6 +2483,10 @@ local function SetEdgePassability(params, edge, minLandTier)
 	else
 		edge.vehPass = false
 		edge.botPass = true
+	end
+	
+	if edge.vehPass and edge.endTierDiff > 1 and edge.length / edge.endTierDiff < 80 then
+		edge.terrainWidth = edge.terrainWidth * edge.endTierDiff / 2
 	end
 	
 	-- Scale to edge height
@@ -2738,9 +2756,11 @@ local function FindConnectedComponents(cells)
 		end
 	end
 	
-	for i = 1, #cells do
-		local cell = cells[i]
-		PointEcho(cell.site, cellComps[i] or "NA")
+	if PRINT_CONNECTION then
+		for i = 1, #cells do
+			local cell = cells[i]
+			PointEcho(cell.site, cellComps[i] or "NA")
+		end
 	end
 end
 
@@ -2765,7 +2785,7 @@ local function GenerateEdgePassability(params, cells, edgesSorted, waveFunc, wav
 	-- Smallest to largest
 	for i = #edgesSorted, 1, -1 do
 		local thisEdge = edgesSorted[i]
-		if thisEdge.firstMirror then
+		if MAKE_IGLOO and ((not SYMMETRY) or thisEdge.firstMirror) then
 			local iglooTier = SetEdgeSoloTerrain(params, thisEdge, waveFunc, waveHeightMult, tierFunc)
 			MirrorEdgePassability(thisEdge)
 			
@@ -3638,9 +3658,11 @@ local function MakeHeightmap(cells, edges, heightMod, waveFunc, waveHeightMult, 
 		ConditionalSleep()
 	end
 	Spring.ClearWatchDogTimer()
+	
 	TerraformByHeights(smoothHeights)
 	GG.mapgen_origHeight = smoothHeights
 	EchoProgress("Map terrain complete")
+	
 	
 	return smoothHeights
 end
@@ -3681,16 +3703,8 @@ local newParams = {
 	iglooMaxHeightTierDiffMult = 60,
 	iglooMaxHeightVar = 0.2,
 	highDiffParallelIglooChance = 0.5,
-	steepSmallCliffWidth = 4,
-	cliffBotWidth = 60,
-	steepCliffWidth = 12,
-	seaBorderWidth = 30,
-	seaBorderDepth = -110,
-	softMinHeight = -110,
-	softMinHeightBelow = -60,
 	steepCliffChance = 0.85,
 	bigDiffSteepCliffChance = 0.75,
-	smallCliffChance = 0.5,
 	rampChance = 0.4,
 	bigDiffRampChance = 0.3,
 	bigDiffRampReduction = 0.05,
@@ -3698,8 +3712,24 @@ local newParams = {
 	tierConst = 42,
 	tierHeight = 60,
 	vehPassTiers = 2, -- Update based on tierHeight
-	rampWidth = 145,
+	
+	smallCliffChance = 0.7,
+	smallBotRampChance = 0.6,
+	steepSmallCliffWidth = 8,
+	steepCliffWidth = 16,
+	smallBotRampWidth = 35,
+	cliffBotWidth = 60,
+	seaBorderWidth = 30,
 	smallRampWidth = 160,
+	smallRampWidthMax = 220,
+	rampWidth = 140,
+	beachRampWidth = 120,
+	underwaterRampWidth = 250,
+	
+	seaBorderDepth = MIN_HEIGHT,
+	softMinHeight = MIN_HEIGHT,
+	softMinHeightBelow = -60,
+	
 	generalWaveMod = 0.65,
 	waveDirectMult = 1.5,
 	bucketBase = 50,
@@ -3806,7 +3836,7 @@ local function MakeMap()
 		{{  mapLeft, -10*MAP_Z}, { mapLeft, 10*MAP_Z}},
 		{{ mapRight, -10*MAP_Z}, {mapRight, 10*MAP_Z}},
 	}
-	local randomSeed = GetSeed() -- 1246958
+	local randomSeed = 9189377 --GetSeed() -- 1246958
 	math.randomseed(randomSeed)
 
 	Spring.SetGameRulesParam("typemap", "temperate2")
@@ -3865,7 +3895,7 @@ function gadget:GameFrame()
 		for i = 1, #toDrawEdges do
 			local edge = toDrawEdges[i]
 			LineDraw(edge)
-			LineEcho(edge, (edge.vehPass and "") or "IMPASS")
+			--LineEcho(edge, (tonumber(edge.endTierDiff) or "N") .. "   "  .. (tonumber(edge.terrainWidth) or "N") .. "   " .. ((not edge.botPass and "IMPASS") or (edge.vehPass and "") or "NV"))
 		end
 		toDrawEdges = nil
 	end

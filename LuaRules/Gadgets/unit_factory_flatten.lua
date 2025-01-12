@@ -7,7 +7,7 @@ function gadget:GetInfo()
 		date    = "2017-10-01",
 		license = "GNU GPL, v2 or later",
 		layer   = 1, -- after mission_galaxy_campaign_battle_handler (it levels ground for facs and would overwrite ours)
-		enabled = true,
+		enabled = false,
 	}
 end
 
