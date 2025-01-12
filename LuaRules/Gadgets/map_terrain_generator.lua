@@ -21,21 +21,21 @@ end
 local MIN_EDGE_LENGTH = 10
 local SAME_POINT_LEEWAY = 2.5
 local DO_SMOOTHING = true
-local MAKE_IGLOO = false
-local DISABLE_TERRAIN_GENERATOR = false
-local RELOAD_REGEN = false
-
-local DRAW_EDGES = true
-local PRINT_CONNECTION = true
-local PRINT_TIERS = false
-
-local PRINT_MEX_ALLOC = false
-local PRINT_CURVES = false
-local SHOW_WAVEMAP = false
-local TIME_MAP_GEN = false
-
+local MAKE_IGLOO = true
 local SYMMETRY = false
 local MIN_HEIGHT = -110
+
+local DRAW_EDGES = false
+local PRINT_TIERS = false
+local PRINT_CONNECTION = false
+local PRINT_IGLOOS = false
+local PRINT_MEX_ALLOC = false
+local PRINT_CURVES = false
+
+local SHOW_WAVEMAP = false
+local TIME_MAP_GEN = false
+local DISABLE_TERRAIN_GENERATOR = false
+local RELOAD_REGEN = false
 
 -- Can be set by GG.GenerateNewMap
 local useMapArea = 1
@@ -2320,7 +2320,7 @@ local function GenerateCellTiers(params, cells, waveFunc)
 		cell.underwater = cell.tier < minLandTier
 	end
 	
-	return tierConst, tierHeight, GetTierFunc(tierConst, tierHeight), tierMin, tierMax, minLandTier
+	return tierConst, tierHeight, GetTierFunc(tierConst, tierHeight), tierMin, tierMax, minLandTier, bucketWidth
 end
 
 local function SetEdgeTierParameters(edge, minLandTier)
@@ -2477,7 +2477,7 @@ local function SetEdgePassability(params, edge, minLandTier)
 	if (edge.terrainWidth <= params.steepCliffWidth) then
 		edge.vehPass = false
 		edge.botPass = false
-	elseif (edge.terrainWidth*params.vehPassTiers >= params.rampWidth) then
+	elseif (edge.terrainWidth >= params.vehPassThreshold) then
 		edge.vehPass = true
 		edge.botPass = true
 	else
@@ -2485,91 +2485,49 @@ local function SetEdgePassability(params, edge, minLandTier)
 		edge.botPass = true
 	end
 	
-	if edge.vehPass and edge.endTierDiff > 1 and edge.length / edge.endTierDiff < 80 then
-		edge.terrainWidth = edge.terrainWidth * edge.endTierDiff / 2
-	end
-	
 	-- Scale to edge height
 	edge.terrainWidth = edge.terrainWidth*edge.tierDiff
 end
 
-local function SetEdgeSoloTerrain(params, edge, waveFunc, waveHeightMult, tierFunc)
-	if edge.underwater then
-		--LineEchoMirror(edge, "UW")
+local function EnsureEdgeWidthMatchesPass(params, edge, minLandTier)
+	if edge.lowTier < minLandTier or edge.tierDiff == 0 then
+		-- Don't care about the water for these maps
 		return
 	end
-	
-	--if IsEdgeAdjacentToStart(edge) then
-	--	LineEchoMirror(edge, "Adj START")
-	--	return
-	--end
-	
-	if edge.adjacentToBorder then
-		--LineEchoMirror(edge, "adjacentToBorder")
+	if edge.vehPass then
+		local requiredWidth = (edge.tierDiff == 1 and params.smallRampWidth) or params.rampWidth
+		if edge.terrainWidth < requiredWidth * edge.tierDiff then
+			--LineEcho(edge," _________update to veh pass " .. edge.terrainWidth)
+			edge.terrainWidth = requiredWidth * edge.tierDiff
+		end
+		if edge.endTierDiff > 1 and edge.length / edge.endTierDiff < 80 then
+			edge.terrainWidth = edge.terrainWidth * edge.endTierDiff / 2
+		end
+	elseif edge.botPass then
+		local requiredWidth = (edge.tierDiff == 1 and params.smallBotRampWidth) or params.cliffBotWidth
+		if edge.terrainWidth < requiredWidth * edge.tierDiff then
+			--LineEcho(edge," _________update to bot pass " .. edge.terrainWidth)
+			edge.terrainWidth = requiredWidth * edge.tierDiff
+		end
+	end
+end
+
+local function SimpleIgloos(params, edge, waveFunc, waveHeightMult, tierFunc)
+	if edge.underwater or edge.adjacentToBorder or edge.tierDiff ~= 0 or (edge.endTierDiff ~= 0 and edge.length < 250) then
 		return
 	end
 	local edgeNbhd = edge.neighbours
-	
-	-- Exit early with some probability.
-	if params.flatIglooChances and edge.tierDiff == 0 and params.flatIglooChances[edge.lowTier] then
-		if random() < (1 - params.flatIglooChances[edge.lowTier]) then
-			--LineEchoMirror(edge, "Rand Early Exit")
-			return
-		end
-	end
-	
-	-- Do not block off passages
-	if edge.minEndTierCount > 1  then
-		-- allow a special case to make an igloo on open shallow ramps
-		if edge.minEndTierCount > 2 then
-			--LineEchoMirror(edge, "minEndTierCount > 2")
-			return
-		end
-		if edge.tierDiff > 1 then
-			if random() < params.highDiffParallelIglooChance then
-				--LineEchoMirror(edge, "highDiffParallelIglooChance")
-				return
-			end
-			-- All edges on a slope must be veh-passable to make a parallel slope igloo
-			if edge.length < params.iglooTierDiffOpenThreshold then
-				for i = 1, #edgeNbhd do
-					local nbhd = edgeNbhd[i]
-					for j = 1, #nbhd do
-						if not nbhd[j].vehPass then
-							--LineEchoMirror(edge, "NO VEH")
-							return
-						end
-					end
-				end
-			end
-		end
-		local allowCount = 0
-		for i = 1, #edgeNbhd do
-			local nbhd = edgeNbhd[i]
-			if nbhd.endFace and nbhd.minLength > params.iglooTierDiffOpenThreshold
-					and (nbhd.endFace.tier == edge.lowTier or nbhd.endFace.tier == edge.highTier) then
-				allowCount = allowCount + 1
-			end
-		end
-		if allowCount < 2 then
-			--LineEchoMirror(edge, "allowCount < 2")
-			return
-		end
-	end
-	
-	-- Check for open ends - ends without a lot of terrain around them
+
 	local openEnd = {}
 	for i = 1, #edgeNbhd do
 		local nbhd = edgeNbhd[i]
-		if nbhd.minLength > params.iglooTierDiffOpenThreshold then
-			openEnd[i] = true
-		elseif nbhd.endTierCount == 1 and nbhd.endFace then
+		if nbhd.tierDiff == 0 then
 			local open = true
-			local maybePartialOpen = true
 			for n = 1, #nbhd do
 				local otherEdge = nbhd[n]
-				if otherEdge.maxEndTierCount > 1 and otherEdge.length < params.openEdgeIglooThreshold then
+				if (otherEdge.length < 250 and otherEdge.endTierDiff ~= 0) or otherEdge.tierDiff ~= 0 then
 					open = false
+					break
 				end
 			end
 			openEnd[i] = open
@@ -2577,16 +2535,10 @@ local function SetEdgeSoloTerrain(params, edge, waveFunc, waveHeightMult, tierFu
 	end
 	
 	if not (openEnd[1] or openEnd[2]) then
-		--LineEchoMirror(edge, "NOT OPEN")
-		return
-	end
-	
-	if openEnd[1] and openEnd[2] and not edge.selfMirror then
-		if random() < 0.5 then
-			openEnd[1] = false
-		else
-			openEnd[2] = false
+		if PRINT_IGLOOS then
+			LineEchoMirror(edge, "NOT OPEN")
 		end
+		return
 	end
 	
 	local iglooTier = edge.lowTier + 1
@@ -2635,11 +2587,11 @@ local function SetEdgeSoloTerrain(params, edge, waveFunc, waveHeightMult, tierFu
 		edge.iglooStart = Add(edge[1], Mult(0.5*edge.length - 0.5*iglooLength, edge.unit))
 		edge.iglooEnd   = Add(edge[1], Mult(0.5*edge.length + 0.5*iglooLength, edge.unit))
 	elseif openEnd[1] then
-		edge.iglooStart = edge[2]
-		edge.iglooEnd   = Add(edge[1], Mult(edge.length - iglooLength, edge.unit))
-	else
 		edge.iglooStart = edge[1]
 		edge.iglooEnd   = Add(edge[1], Mult(iglooLength, edge.unit))
+	else
+		edge.iglooStart = edge[2]
+		edge.iglooEnd   = Add(edge[1], Mult(edge.length - iglooLength, edge.unit))
 	end
 	
 	-- Limit absolute height of the igloo.
@@ -2690,14 +2642,15 @@ local function SetEdgeSoloTerrain(params, edge, waveFunc, waveHeightMult, tierFu
 		edge.iglooStart             = ApplyRotSymmetry(edge.iglooEnd)
 	end
 	
-	--LineEchoMirror(edge, "Make Igloo " .. 
-	--	edge.iglooParams.startScale .. ", " ..
-	--	edge.iglooParams.endScale .. ", " ..
-	--	waveFunc(edge.iglooStart[1], edge.iglooStart[2]) .. ", " ..
-	--	expectedBaseHeight .. ", " ..
-	--	""
-	--)
-	
+	if PRINT_IGLOOS then
+		LineEchoMirror(edge, "Make Igloo " .. 
+			edge.iglooParams.startScale .. ", " ..
+			edge.iglooParams.endScale .. ", " ..
+			waveFunc(edge.iglooStart[1], edge.iglooStart[2]) .. ", " ..
+			expectedBaseHeight .. ", " ..
+			""
+		)
+	end
 	return iglooTier
 end
 
@@ -2730,14 +2683,16 @@ end
 
 local function FindConnectedComponents(cells)
 	local exploreTree = {}
-	local cellComps = {}
+	local cellComp = {}
 	local component = 0
+	local cellList = {}
 	for i = 1, #cells do
 		local root = cells[i]
-		if not cellComps[root.index] and not root.underwater then
+		if not cellComp[root.index] and not root.underwater then
 			exploreTree[#exploreTree + 1] = root.index
 			component = component + 1
-			cellComps[root.index] = component
+			cellComp[root.index] = component
+			cellList[#cellList + 1] = cells[root.index]
 		end
 		while #exploreTree > 0 do
 			local cellIndex = exploreTree[#exploreTree]
@@ -2747,9 +2702,10 @@ local function FindConnectedComponents(cells)
 				local edge = expCell.edges[j]
 				if edge.vehPass and edge.otherFace[cellIndex] then
 					local other = edge.otherFace[cellIndex]
-					if not cellComps[other.index] and not other.underwater then
+					if not cellComp[other.index] and not other.underwater then
 						exploreTree[#exploreTree + 1] = other.index
-						cellComps[other.index] = component
+						cellComp[other.index] = component
+						cellList[#cellList + 1] = cells[other.index]
 					end
 				end
 			end
@@ -2759,7 +2715,58 @@ local function FindConnectedComponents(cells)
 	if PRINT_CONNECTION then
 		for i = 1, #cells do
 			local cell = cells[i]
-			PointEcho(cell.site, cellComps[i] or "NA")
+			PointEcho(cell.site, cellComp[i] or "NA")
+		end
+	end
+	return component, cellComp, cellList
+end
+
+local function MergeComponents(componentCount, cellComp, orderedComponentList)
+	local identityMap = {}
+	local connectionsRequired = componentCount - 1
+	for i = 1, componentCount do
+		identityMap[i] = i
+	end
+	for i = #orderedComponentList, 1, -1 do -- Chances are that later components are smaller
+		if connectionsRequired <= 0 then
+			return
+		end
+		local cell = orderedComponentList[i]
+		local cellIndex = cell.index
+		local component = cellComp[cellIndex]
+		local minDiff = false
+		local minDiffEdge = false
+		local otherComponent = false
+		for j = 1, #cell.edges do
+			local edge = cell.edges[j]
+			local other = edge.otherFace[cellIndex]
+			if other then
+				if identityMap[cellComp[other.index]] ~= identityMap[component] then
+					local diff = math.abs(other.tier - cell.tier)
+					if (not minDiff) or minDiff > diff then
+						minDiff = diff
+						minDiffEdge = edge
+						otherComponent = identityMap[cellComp[other.index]]
+					end
+				end
+			end
+		end
+		
+		if otherComponent then
+			minDiffEdge.botPass = true
+			minDiffEdge.vehPass = true
+			local myComponent = identityMap[component]
+			if myComponent < otherComponent then
+				-- Identity map should point to the lowest identified
+				-- component.
+				myComponent, otherComponent = otherComponent, myComponent
+			end
+			for j = 1, componentCount do
+				if identityMap[j] == myComponent then
+					identityMap[j] = otherComponent
+				end
+			end
+			connectionsRequired = connectionsRequired - 1
 		end
 	end
 end
@@ -2786,7 +2793,7 @@ local function GenerateEdgePassability(params, cells, edgesSorted, waveFunc, wav
 	for i = #edgesSorted, 1, -1 do
 		local thisEdge = edgesSorted[i]
 		if MAKE_IGLOO and ((not SYMMETRY) or thisEdge.firstMirror) then
-			local iglooTier = SetEdgeSoloTerrain(params, thisEdge, waveFunc, waveHeightMult, tierFunc)
+			local iglooTier = SimpleIgloos(params, thisEdge, waveFunc, waveHeightMult, tierFunc)
 			MirrorEdgePassability(thisEdge)
 			
 			if iglooTier then
@@ -2796,8 +2803,14 @@ local function GenerateEdgePassability(params, cells, edgesSorted, waveFunc, wav
 		end
 	end
 	
-	FindConnectedComponents(cells)
+	local componentCount, cellComp, orderedComponentList = FindConnectedComponents(cells)
+	MergeComponents(componentCount, cellComp, orderedComponentList)
 	
+	for i = 1, #edgesSorted do
+		-- Make sure that units can path where veh and bot pathing claim that they can go
+		local thisEdge = edgesSorted[i]
+		EnsureEdgeWidthMatchesPass(params, thisEdge, minLandTier)
+	end
 	return tierMin, tierMax
 end
 
@@ -3020,7 +3033,7 @@ local function SetStartAndModifyCellTiers_SetPoint(cells, edgesSorted, waveFunc,
 			end
 		end
 		if averageCount > 0 then
-			startCell.tier = floor(averageTier / averageCount + 0.25 + random()*0.5)
+			--startCell.tier = floor(averageTier / averageCount + 0.25 + random()*0.5)
 		else
 			disallowedCells[startCell.index] = true
 			startCell = false
@@ -3577,9 +3590,9 @@ local function GetSeed()
 	return random(1, 10000000)
 end
 
-local function GetWaveHeightMult(tierMin, tierMax, params)
+local function GetWaveHeightMult(tierMin, tierMax, params, bucketWidth)
 	local tierDiff = (tierMax - tierMin)
-	local waveMult = params.waveDirectMult/(tierDiff + 1.5)
+	local waveMult = (params.waveDirectMult - math.max(0, (bucketWidth - 100)) / 110)/(tierDiff + 1.5)
 	return waveMult
 end
 
@@ -3598,10 +3611,10 @@ local function GetTerrainStructure(params)
 	local edgesSorted = Spring.Utilities.CopyTable(edges, false)
 	table.sort(edgesSorted, CompareLength)
 	
-	local tierConst, tierHeight, tierFunc, tierMin, tierMax, minLandTier = GenerateCellTiers(params, cells, waveFunc)
+	local tierConst, tierHeight, tierFunc, tierMin, tierMax, minLandTier, bucketWidth = GenerateCellTiers(params, cells, waveFunc)
 	EchoProgress("Cells teirs complete")
 	ConditionalSleep()
-	local waveHeightMult = GetWaveHeightMult(tierMin, tierMax, params)
+	local waveHeightMult = GetWaveHeightMult(tierMin, tierMax, params, bucketWidth)
 	EchoProgress("GetWaveHeightMult complete")
 	ConditionalSleep()
 	
@@ -3690,7 +3703,7 @@ local newParams = {
 	pointSplitRadius = 340,
 	splitIterations = 2,
 	repelIterations = 5,
-	repelForce = 50000,
+	repelForce = 42000,
 	repelBase = 40,
 	edgeBias = 1.15,
 	longIglooFlatten = 1.9,
@@ -3713,25 +3726,27 @@ local newParams = {
 	tierHeight = 60,
 	vehPassTiers = 2, -- Update based on tierHeight
 	
-	smallCliffChance = 0.7,
-	smallBotRampChance = 0.6,
-	steepSmallCliffWidth = 8,
-	steepCliffWidth = 16,
-	smallBotRampWidth = 35,
-	cliffBotWidth = 60,
+	smallCliffChance = 0.45,
+	smallBotRampChance = 0.65,
+	steepSmallCliffWidth = 4,
+	steepCliffWidth = 10,
+	smallBotRampWidth = 85,
+	cliffBotWidth = 70,
 	seaBorderWidth = 30,
 	smallRampWidth = 160,
 	smallRampWidthMax = 220,
-	rampWidth = 140,
-	beachRampWidth = 120,
+	rampWidth = 145,
+	beachRampWidth = 110,
 	underwaterRampWidth = 250,
+	vehPassThreshold = 85, -- A ramp needs to be this wide per tier to detect as veh passable
+	botPassThreshold = 40, -- A ramp needs to be this wide per tier to detect as bot passable
 	
 	seaBorderDepth = MIN_HEIGHT,
 	softMinHeight = MIN_HEIGHT,
-	softMinHeightBelow = -60,
+	softMinHeightBelow = -35,
 	
 	generalWaveMod = 0.65,
-	waveDirectMult = 1.5,
+	waveDirectMult = 1.4,
 	bucketBase = 50,
 	bucketRandomOffset = 60,
 	bucketStdMult = 0.5,
@@ -3776,47 +3791,6 @@ local newParams = {
 	bigTeamMetalMult = 1.1,
 }
 
-local function GetSpaceIncreaseParams()
-	local spaceParams = Spring.Utilities.CopyTable(newParams)
-	spaceParams.vorPoints = 15
-	spaceParams.vorPointsRand = 6
-	
-	-- New parameters
-	spaceParams.seaEdgelimit = 400
-	spaceParams.seaEdgelimitRepeatFactor = 0.8
-	spaceParams.flatIglooChances = {[-1] = 0.8}
-	spaceParams.flatIglooWidthMult = {[-1] = 0.4}
-	
-	-- Divide some voronoi size parameters. Increases as randomly drawn points increses.
-	spaceParams.vorScaleAdjustPoint = 1.3
-	spaceParams.vorScaleAdjustRand = 0.05
-	
-	-- These parameters are affected by vorScaleAdjustPoint and vorScaleAdjustRand
-	spaceParams.midPoints = 2
-	spaceParams.midPointRadius = 400
-	spaceParams.midPointSpace = 200
-	spaceParams.minSpace = 150
-	spaceParams.maxSpace = 400
-	spaceParams.pointSplitRadius = 500
-	
-	spaceParams.baseMexesPerSide = 7
-	spaceParams.baseMexesRand = 5
-	spaceParams.predefinedMexSize = 330
-	spaceParams.mexLoneSize = 320
-	spaceParams.mexPairSize = 90
-	spaceParams.mexPairSizePostSize = 640
-	spaceParams.startMexSize = 530
-	
-	spaceParams.steepCliffChance = 0.82
-	spaceParams.bigDiffSteepCliffChance = 0.95
-	spaceParams.rampChance = 0.72
-	spaceParams.bigDiffRampChance = 0.62
-	spaceParams.bigDiffRampReduction = 0.18
-	spaceParams.rampVehWidthChance = {[2] = 0.95, [2] = 0.88, [4] = 0.55}
-	spaceParams.impassEdgeThreshold = 380
-	return spaceParams
-end
-
 local function MakeMap()
 	local params = Spring.Utilities.CopyTable(newParams)
 	params.vorPoints = math.ceil(params.vorPoints * (0.25 + 0.75*useMapArea))
@@ -3836,7 +3810,8 @@ local function MakeMap()
 		{{  mapLeft, -10*MAP_Z}, { mapLeft, 10*MAP_Z}},
 		{{ mapRight, -10*MAP_Z}, {mapRight, 10*MAP_Z}},
 	}
-	local randomSeed = 9189377 --GetSeed() -- 1246958
+	
+	local randomSeed = GetSeed()
 	math.randomseed(randomSeed)
 
 	Spring.SetGameRulesParam("typemap", "temperate2")
@@ -3850,15 +3825,15 @@ local function MakeMap()
 	
 	EchoProgress("Map Terrain Generation")
 	Spring.Echo("Random Seed", randomSeed)
-	local cells, edges, edgesSorted, heightMod, waveFunc, waveHeightMult, tiers, tierConst, tierHeight, tierMin, tierMax, startCell
+	local cells, edges, edgesSorted, heightMod, waveFunc, waveHeightMult, tiers, tierConst, tierHeight, tierMin, tierMax, startCell, bucketWidth
 	while not cells do
-		cells, edges, edgesSorted, heightMod, waveFunc, waveHeightMult, tiers, tierConst, tierHeight, tierMin, tierMax, startCell = GetTerrainStructure(params)
+		cells, edges, edgesSorted, heightMod, waveFunc, waveHeightMult, tiers, tierConst, tierHeight, tierMin, tierMax, startCell, bucketWidth = GetTerrainStructure(params)
 	end
 	
 	toDrawEdges = DRAW_EDGES and edges
 	
 	if not SHOW_WAVEMAP then
-		local smoothHeights = MakeHeightmap(cells, edges, heightMod, waveFunc, waveHeightMult, tiers, tierConst, tierHeight, tierMin, tierMax, params)
+		local smoothHeights = MakeHeightmap(cells, edges, heightMod, waveFunc, waveHeightMult, tiers, tierConst, tierHeight, tierMin, tierMax, params, bucketWidth)
 		ApplyTreeDensity(cells)
 		
 		PlaceMetalSpots(cells, startCell, smoothHeights, params)
@@ -3895,7 +3870,7 @@ function gadget:GameFrame()
 		for i = 1, #toDrawEdges do
 			local edge = toDrawEdges[i]
 			LineDraw(edge)
-			--LineEcho(edge, (tonumber(edge.endTierDiff) or "N") .. "   "  .. (tonumber(edge.terrainWidth) or "N") .. "   " .. ((not edge.botPass and "IMPASS") or (edge.vehPass and "") or "NV"))
+			LineEcho(edge, (tonumber(edge.endTierDiff) or "N") .. "   "  .. (tonumber(edge.terrainWidth) or "N") .. "   " .. ((not edge.botPass and "IMPASS") or (edge.vehPass and "") or "NV"))
 		end
 		toDrawEdges = nil
 	end
