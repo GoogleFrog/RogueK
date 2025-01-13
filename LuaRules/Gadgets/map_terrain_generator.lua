@@ -27,7 +27,7 @@ local MIN_HEIGHT = -110
 
 local DRAW_EDGES = true
 local PRINT_TIERS = false
-local PRINT_CONNECTION = true
+local PRINT_CONNECTION = false
 local PRINT_IGLOOS = false
 local PRINT_MEX_ALLOC = false
 local PRINT_CURVES = false
@@ -2154,26 +2154,35 @@ local function SetCellTier(cell, tier, tierConst, tierHeight)
 	end
 end
 
-local function ChangeCellTierIfHomogenousNeighbours(cell, tierConst, tierHeight, tierMin, tierMax)
+local function ChangeCellTierIfHomogenousNeighbours(cell, tierConst, tierHeight, tierMin, tierMax, minLandTier)
 	local myTier = cell.tier
-	local nbhd = cell.neighbours
-	local averageTierDiff = 0
-	for i = 1, #nbhd do
-		averageTierDiff = averageTierDiff + math.abs(myTier - nbhd[i].tier)
-	end
-	averageTierDiff = averageTierDiff / #nbhd
-	if averageTierDiff > 0.2 then
+	if myTier < minLandTier then
 		tierMin = min(myTier, tierMin)
 		tierMax = max(myTier, tierMax)
 		return tierMin, tierMax
 	end
-	
+	local nbhd = cell.neighbours
+	local count = 0
+	local averageTierDiff = 0
+	for i = 1, #nbhd do
+		if nbhd[i].tier >= minLandTier then
+			averageTierDiff = averageTierDiff + math.abs(myTier - nbhd[i].tier)
+			count = count + 1
+		end
+	end
+	if count > 0 then
+		averageTierDiff = averageTierDiff / count
+		if averageTierDiff > 0.3 then
+			tierMin = min(myTier, tierMin)
+			tierMax = max(myTier, tierMax)
+			return tierMin, tierMax
+		end
+	end
 	local newTier = myTier + ((random() > 0.5 and 1) or -1)
 	tierMin = min(newTier, tierMin)
 	tierMax = max(newTier, tierMax)
 	
 	SetCellTier(cell, newTier, tierConst, tierHeight)
-	
 	return tierMin, tierMax
 end
 
@@ -2278,7 +2287,7 @@ local function GenerateCellTiers(params, cells, waveFunc)
 	-- Randomly change tiers of flat areas
 	for i = 1, #cells do
 		local cell = cells[i]
-		tierMin, tierMax = ChangeCellTierIfHomogenousNeighbours(cell, tierConst, tierHeight, tierMin, tierMax)
+		tierMin, tierMax = ChangeCellTierIfHomogenousNeighbours(cell, tierConst, tierHeight, tierMin, tierMax, minLandTier)
 	end
 	
 	-- Cut down on water cells.
@@ -2406,6 +2415,8 @@ local function SetEdgePassability(params, edge, minLandTier)
 	if edge.underwater then
 		-- Always make a ramp.
 		edge.terrainWidth = params.underwaterRampWidth * edge.tierDiff
+	elseif (edge.lowTier < minLandTier and edge.highTier == minLandTier) then
+		edge.terrainWidth = params.beachRampWidth
 	elseif edge.tierDiff <= 1 then
 		if edge.tierDiff > 0 and random() < params.smallCliffChance then
 			edge.terrainWidth = params.steepSmallCliffWidth
@@ -2438,7 +2449,7 @@ local function SetEdgePassability(params, edge, minLandTier)
 	end
 	
 	-- Make a veh-pathable mega ramp.
-	if edge.terrainWidth >= params.rampWidth and edge.tierDiff >= 2 and edge.tierDiff <= 5 and not (edge.lowTier < minLandTier) then
+	if edge.terrainWidth >= params.rampWidth and edge.tierDiff >= 2 and edge.tierDiff <= 5 and edge.lowTier >= minLandTier then
 		if edge.tierDiff >= 3 and edge.lowTier < minLandTier and random() < 0.95 then
 			edge.terrainWidth = edge.terrainWidth*1.45
 		else
@@ -2463,7 +2474,7 @@ local function SetEdgePassability(params, edge, minLandTier)
 		end
 	end
 	
-	if edge.terrainWidth <= params.cliffBotWidth and not edge.adjToStart then
+	if edge.terrainWidth <= params.cliffBotWidth and not edge.adjToStart and edge.lowTier >= minLandTier then
 		edge.cliffEdge = true
 		if edge.tierDiff == 2 then
 			if random() < params.steepCliffChance then
@@ -2692,7 +2703,7 @@ local function FindConnectedComponents(cells)
 			exploreTree[#exploreTree + 1] = root.index
 			component = component + 1
 			cellComp[root.index] = component
-			cellList[#cellList + 1] = cells[root.index]
+			cellList[#cellList + 1] = root
 		end
 		while #exploreTree > 0 do
 			local cellIndex = exploreTree[#exploreTree]
@@ -2705,7 +2716,7 @@ local function FindConnectedComponents(cells)
 					if not cellComp[other.index] and not other.underwater then
 						exploreTree[#exploreTree + 1] = other.index
 						cellComp[other.index] = component
-						cellList[#cellList + 1] = cells[other.index]
+						cellList[#cellList + 1] = other
 					end
 				end
 			end
@@ -2740,7 +2751,7 @@ local function MergeComponents(componentCount, cellComp, orderedComponentList)
 		for j = 1, #cell.edges do
 			local edge = cell.edges[j]
 			local other = edge.otherFace[cellIndex]
-			if other then
+			if other and cellComp[other.index] then
 				if identityMap[cellComp[other.index]] ~= identityMap[component] then
 					local diff = math.abs(other.tier - cell.tier)
 					if (not minDiff) or minDiff > diff then
@@ -2752,9 +2763,12 @@ local function MergeComponents(componentCount, cellComp, orderedComponentList)
 			end
 		end
 		
+		--PointEcho(cell.site, "_________" .. i)
 		if otherComponent then
 			minDiffEdge.botPass = true
 			minDiffEdge.vehPass = true
+			--LineEcho(minDiffEdge, "Made connection " .. connectionsRequired .. "   " .. i)
+			--Spring.Echo(myComponent, otherComponent)
 			local myComponent = identityMap[component]
 			if myComponent < otherComponent then
 				-- Identity map should point to the lowest identified
@@ -2766,7 +2780,9 @@ local function MergeComponents(componentCount, cellComp, orderedComponentList)
 					identityMap[j] = otherComponent
 				end
 			end
+			--Spring.Utilities.TableEcho(identityMap)
 			connectionsRequired = connectionsRequired - 1
+			i = i + 1
 		end
 	end
 end
@@ -2865,7 +2881,13 @@ local function ApplyHeightModifiers(tierConst, tierHeight, tierMin, tierMax, tie
 				waveHeight = waveFunc(x, z)*(waveMult + upmod + downmod) + stripeRisk*sin(waveFunc(x, z)*0.02)
 			end
 			
-			heights[x][z] = baseHeight + waveHeight + tierHeight*change
+			local height = baseHeight + tierHeight*change
+			if height > -20 then
+				height = height + waveHeight
+			else
+				height = height + waveHeight * (30 / (10 - height))
+			end
+			heights[x][z] = height
 			untilSleep = untilSleep + 1
 			if untilSleep > 5000 then
 				untilSleep = 0
@@ -2900,8 +2922,8 @@ local function ApplyHeightSmooth(rawHeights, filter, params)
 					heightSum = heightSum + ((rawHeights[sx] and rawHeights[sx][sz]) or thisHeight)*filter[i][3]
 				end
 				heights[x][z] = heightSum*filterMult
-				if heights[x][z] < softMinHeightBelow then
-					heights[x][z] = heights[x][z] + (softMinHeight - heights[x][z])*math.min(0.9, (softMinHeightBelow - heights[x][z]) / (softMinHeightBelow - softMinHeight))
+				if heights[x][z] < softMinHeight then
+					heights[x][z] = heights[x][z] + (softMinHeight - heights[x][z])*math.min(0.5, (softMinHeightBelow - heights[x][z]) / (softMinHeightBelow - softMinHeight))
 				end
 			else
 				heights[x][z] = thisHeight
@@ -3700,10 +3722,10 @@ local newParams = {
 	midPointSpace = 220,
 	minSpace = 150,
 	maxSpace = 160,
-	pointSplitRadius = 340,
+	pointSplitRadius = 310,
 	splitIterations = 2,
 	repelIterations = 5,
-	repelForce = 42000,
+	repelForce = 45000,
 	repelBase = 40,
 	edgeBias = 1.15,
 	longIglooFlatten = 1.9,
@@ -3738,14 +3760,14 @@ local newParams = {
 	smallRampWidth = 160,
 	smallRampWidthMax = 220,
 	rampWidth = 145,
-	beachRampWidth = 110,
+	beachRampWidth = 105,
 	underwaterRampWidth = 250,
 	vehPassThreshold = 85, -- A ramp needs to be this wide per tier to detect as veh passable
 	botPassThreshold = 40, -- A ramp needs to be this wide per tier to detect as bot passable
 	
 	seaBorderDepth = MIN_HEIGHT,
 	softMinHeight = MIN_HEIGHT,
-	softMinHeightBelow = -35,
+	softMinHeightBelow = -80,
 	
 	generalWaveMod = 0.65,
 	waveDirectMult = 1.4,
@@ -3813,7 +3835,7 @@ local function MakeMap()
 		{{ mapRight, -10*MAP_Z}, {mapRight, 10*MAP_Z}},
 	}
 	
-	local randomSeed = 7657349 -- GetSeed()
+	local randomSeed = GetSeed()
 	math.randomseed(randomSeed)
 
 	Spring.SetGameRulesParam("typemap", "temperate2")
@@ -3872,7 +3894,7 @@ function gadget:GameFrame()
 		for i = 1, #toDrawEdges do
 			local edge = toDrawEdges[i]
 			LineDraw(edge)
-			LineEcho(edge, (tonumber(edge.endTierDiff) or "N") .. "   "  .. (tonumber(edge.terrainWidth) or "N") .. "   " .. ((not edge.botPass and "IMPASS") or (edge.vehPass and "") or "NV"))
+			--LineEcho(edge, (tonumber(edge.endTierDiff) or "N") .. "   "  .. (tonumber(edge.terrainWidth) or "N") .. "   " .. ((not edge.botPass and "IMPASS") or (edge.vehPass and "") or "NV"))
 		end
 		toDrawEdges = nil
 	end
