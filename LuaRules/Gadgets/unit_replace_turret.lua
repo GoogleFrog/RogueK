@@ -32,20 +32,13 @@ local CMD_ATTACK = CMD.ATTACK
 -- Front back offset issues with vehicle turrets, for offsetting colvol and possibly target pos.
 
 local IterableMap = VFS.Include("LuaRules/Gadgets/Include/IterableMap.lua")
-local TURRET_OFFSET_FUDGE = 2
+
+local mountDefs, turretDefs = VFS.Include("LuaRules/Configs/turret_replace_defs.lua")
 
 local updateTargetNextFrame = {}
+local toCreateCheck = {}
 local turrets = {} -- Indexed turretIDs (unitIDs of turrets), values are unitID of the mount holding the turret.
 local mountData = IterableMap.New() -- Indexed by unitID of mounts.
-
---------------------------------------------------------------------------------
---------------------------------------------------------------------------------
--- To be moved to def files
-
-local mountDefs = {
-	[UnitDefNames["cloakraid"].id] = "chest",
-	[UnitDefNames["jumpraid"].id] = "low_head",
-}
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -98,30 +91,49 @@ end
 -- Setup
 
 local function ReplaceTurret(unitID, unitDefID, teamID, builderID, turretDefID)
-	local mountPiece = mountDefs[unitDefID]
-	local turretPiece = mountDefs[turretDefID]
+	local mountDef = mountDefs[unitDefID]
+	local turretDef = turretDefs[turretDefID]
 	local pieceMap = Spring.GetUnitPieceMap(unitID)
 	
 	-- Hide the turret of the mount, and the body of the turret.
-	HidePieceAndChildren(unitID, mountPiece)
-	local turretID = Spring.CreateUnit(turretDefID, 0, 0, 0, 0, teamID, false, false, builderID)
-	ShowOnlyPieceAndChildren(turretID, turretPiece)
+	if mountDef.hidePieces then
+		for i = 1, #mountDef.hidePieces do
+			HidePieceAndChildren(unitID, mountDef.hidePieces[i])
+		end
+	else
+		HidePieceAndChildren(unitID, mountDef.piece)
+	end
+	local turretID = Spring.CreateUnit(turretDefID, 0, 0, 0, 0, teamID, true)
+	if turretDef.hidePieces or turretDef.hidePiecesNonRecursive then
+		if turretDef.hidePieces then
+			for i = 1, #turretDef.hidePieces do
+				HidePieceAndChildren(turretID, turretDef.hidePieces[i])
+			end
+		end
+		if turretDef.hidePiecesNonRecursive then
+			for i = 1, #turretDef.hidePiecesNonRecursive do
+				HidePieceAndChildren(turretID, turretDef.hidePiecesNonRecursive[i])
+			end
+		end
+	else
+		ShowOnlyPieceAndChildren(turretID, turretDef.piece)
+	end
 	
 	-- Attach the turret to the mount, and apply an offset because the turret is being attached
 	-- at its feet, but the turret needs to line up with the mount
 	local turretPieceMap = Spring.GetUnitPieceMap(turretID)
-	local _, turretOffset = Spring.GetUnitPiecePosition(turretID, turretPieceMap[turretPiece])
-	Spring.UnitAttach(unitID, turretID, pieceMap[mountPiece])
-	GG.UnitModelRescale(turretID, 1, -turretOffset + TURRET_OFFSET_FUDGE)
+	local _, turretOffset = Spring.GetUnitPiecePosition(turretID, turretPieceMap[turretDef.piece])
+	Spring.UnitAttach(unitID, turretID, pieceMap[mountDef.piece])
+	GG.UnitModelRescale(turretID, 1, -turretOffset + (mountDef.turretOffset or 2) + (turretDef.offset or 0))
 	
 	-- The turret is responsible for projectile collision, because it needs to aim from inside
 	-- where the collision volumne of the mount would be. The collision volume is taken
 	-- from the mount, and offset appropriately.
 	local scaleX, scaleY, scaleZ, offsetX, offsetY, offsetZ,
 		volumeType, testType, primaryAxis = Spring.GetUnitCollisionVolumeData(unitID)
-	local _, mountOffset = Spring.GetUnitPiecePosition(unitID, pieceMap[mountPiece])
+	local _, mountOffset = Spring.GetUnitPiecePosition(unitID, pieceMap[mountDef.piece])
 	offsetY = offsetY - mountOffset
-	Spring.SetUnitRulesParam(turretID, "aimpos_offset", -turretOffset)
+	Spring.SetUnitRulesParam(turretID, "aimpos_offset", -turretOffset + (mountDef.turretOffset or 2))
 	GG.OverrideBaseColvol(turretID, scaleX, scaleY, scaleZ, offsetX, offsetY, offsetZ, volumeType, testType, primaryAxis)
 	Spring.SetUnitBlocking(unitID, true, true, false, false)
 	Spring.SetUnitBlocking(turretID, false, false, true, true)
@@ -193,6 +205,40 @@ end
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
+
+local function UpdateUnitStats(unitID, data)
+	local turretID = data.turretID
+	local health, maxHealth, emp = Spring.GetUnitHealth(turretID)
+	local _, _, _, _, build = Spring.GetUnitHealth(unitID)
+	Spring.SetUnitHealth(unitID, {health = health, paralyze = emp})
+	Spring.SetUnitHealth(turretID, {build = build})
+end
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+
+local function UpdateCreationChecks(n)
+	if not toCreateCheck then
+		return
+	end
+	for i = 1, #toCreateCheck do
+		local unitID = toCreateCheck[i]
+		if Spring.ValidUnitID(unitID) then
+			local unitDefID = Spring.GetUnitDefID(unitID)
+			local teamID = Spring.GetUnitTeam(unitID)
+			if unitDefID and teamID then
+				local wantTurret = GG.rk_GetWantedTurret(unitID, unitDefID, teamID)
+				if wantTurret then
+					ReplaceTurret(unitID, unitDefID, teamID, false, wantTurret)
+				end
+			end
+		end
+	end
+	toCreateCheck = false
+end
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 -- Callins
 
 function gadget:AllowCommand(unitID, unitDefID, unitTeam, cmdID, cmdParams, cmdOptions, cmdTag, playerID, fromSynced, fromLua)
@@ -202,8 +248,9 @@ end
 
 function gadget:GameFrame(n)
 	UpdateWeaponChecks(n)
+	UpdateCreationChecks(n)
+	IterableMap.Apply(mountData, UpdateUnitStats)
 end
-
 
 function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponID, attackerID, attackerDefID, attackerTeam)
 	local data = IterableMap.Get(mountData, unitID)
@@ -214,11 +261,11 @@ function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, w
 end
 
 function gadget:UnitCreated(unitID, unitDefID, teamID, builderID)
-	local ud = UnitDefs[unitDefID]
-	if ud.name == "cloakraid" and teamID == 0 then
-		ReplaceTurret(unitID, unitDefID, teamID, builderID, UnitDefNames["jumpraid"].id)
-	end
-	if ud.name == "jumpraid" and teamID == 1 then
-		ReplaceTurret(unitID, unitDefID, teamID, builderID, UnitDefNames["cloakraid"].id)
+	local wantTurret = GG.rk_GetWantedTurret(unitID, unitDefID, teamID)
+	if wantTurret then
+		if builderID then
+			toCreateCheck = toCreateCheck or {}
+			toCreateCheck[#toCreateCheck + 1] = unitID
+		end
 	end
 end

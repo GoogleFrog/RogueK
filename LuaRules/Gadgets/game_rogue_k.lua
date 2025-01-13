@@ -65,16 +65,20 @@ local function SetGlobalLos(enabled)
 end
 
 local function AugmentLoadoutData(data)
-	local validUnitdefIDMap = {}
+	local baseUnitDefMap = {}
 	for i = 1, #data.units do
 		local unit = data.units[i]
 		if unit.mount then
-			validUnitdefIDMap[UnitDefNames[unit.mount.name .. "_" .. i].id] = i
+			baseUnitDefMap[UnitDefNames[unit.mount.name .. "_" .. i].id] = i
+			if unit.turret then
+				Spring.Echo("augmenting", unit.turret.name)
+				unit.turretDefID = UnitDefNames[unit.turret.name].id
+			end
 		elseif unit.combo then
-			validUnitdefIDMap[UnitDefNames[unit.combo.name .. "_" .. i].id] = i
+			baseUnitDefMap[UnitDefNames[unit.combo.name .. "_" .. i].id] = i
 		end
 	end
-	data.validUnitdefIDMap = validUnitdefIDMap
+	data.baseUnitDefMap = baseUnitDefMap
 end
 
 --------------------------------------------------------------------------------
@@ -343,7 +347,7 @@ local function SetBuildOptions(unitID, unitDefID, teamID)
 		local buildoptions = ud.buildOptions
 		for i = 1, #buildoptions do
 			local opt = buildoptions[i]
-			if loadoutData[teamID].validUnitdefIDMap[opt] or opt == FACTORY_ID then
+			if loadoutData[teamID].baseUnitDefMap[opt] or opt == FACTORY_ID then
 				AddUnit(unitID, opt)
 			else
 				RemoveUnit(unitID, opt)
@@ -425,6 +429,22 @@ function GG.rk_MapGenerationComplete(startCell, cells, edges)
 	Spring.SetGameRulesParam("map_texture_generate_count", roundNumber)
 	mapGenerated = true
 	CheckStartBattle()
+end
+
+function GG.rk_GetWantedTurret(unitID, unitDefID, teamID)
+	local loadout = loadoutData[teamID]
+	if not loadout then
+		return
+	end
+	local baseUnitIndex = loadout.baseUnitDefMap[unitDefID]
+	if not baseUnitIndex then
+		return
+	end
+	local unitSpec = loadout.units[baseUnitIndex]
+	if not unitSpec.turretDefID then
+		return
+	end
+	return unitSpec.turretDefID
 end
 
 function gadget:UnitCreated(unitID, unitDefID, teamID)

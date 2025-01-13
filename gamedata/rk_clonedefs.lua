@@ -36,7 +36,7 @@ local function MakeSimpleClone(simpleList, prefix)
 		local cloneName = prefix .. '_' .. name
 		UnitDefs[cloneName] = CopyTable(UnitDefs[name], true)
 		UnitDefs[cloneName].customparams['rk_' .. prefix] = 1
-		UnitDefs[cloneName].base_unit = name
+		UnitDefs[cloneName].customparams.base_unit = name
 		UnitDefs[cloneName].corpse = nil
 	end
 end
