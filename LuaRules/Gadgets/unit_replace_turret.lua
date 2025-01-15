@@ -124,7 +124,7 @@ local function ReplaceTurret(unitID, unitDefID, teamID, builderID, turretDefID)
 	local turretPieceMap = Spring.GetUnitPieceMap(turretID)
 	local _, turretOffset = Spring.GetUnitPiecePosition(turretID, turretPieceMap[turretDef.piece])
 	Spring.UnitAttach(unitID, turretID, pieceMap[mountDef.piece])
-	GG.UnitModelRescale(turretID, 1, -turretOffset + (mountDef.turretOffset or 2) + (turretDef.offset or 0))
+	GG.UnitModelRescale(turretID, 1, -turretOffset + (mountDef.turretOffset or 2) + (turretDef.turretOffset or 0))
 	
 	-- The turret is responsible for projectile collision, because it needs to aim from inside
 	-- where the collision volumne of the mount would be. The collision volume is taken
@@ -144,19 +144,41 @@ local function ReplaceTurret(unitID, unitDefID, teamID, builderID, turretDefID)
 	local ud = UnitDefs[unitDefID]
 	local turretRange = math.max(tud.maxWeaponRange or 10, 10)
 	local mountRange = math.max(ud.maxWeaponRange or 10, 10)
+	local mountSpeed = ud.speed
+	
+	local prevHealth, mountMaxHealth = Spring.GetUnitHealth(unitID)
+	local _, turretMaxHealth = Spring.GetUnitHealth(turretID)
+	
+	local maxHealth = mountMaxHealth
+	local weaponRange = turretRange
+	local speed = mountSpeed
+	
 	GG.Attributes.AddEffect(unitID, "turret_replace", {
 		weaponNum = 1,
-		range = turretRange / mountRange,
+		range = weaponRange / mountRange,
+		healthAdd = maxHealth - mountMaxHealth,
+		speed = ((speed > 0) and (speed / mountSpeed)),
 		reload = 0
 	})
-	Spring.SetUnitMaxRange(unitID, turretRange)
+	GG.Attributes.AddEffect(turretID, "turret_replace", {
+		range = weaponRange / turretRange,
+		healthAdd = maxHealth - turretMaxHealth,
+	})
+	
+	Spring.SetUnitMaxRange(unitID, weaponRange)
+	Spring.SetUnitRulesParam(turretID, "no_eta_display", 1)
+	Spring.SetUnitRulesParam(turretID, "no_healthbar", 1)
 	
 	-- De-duplicate radar dots.
 	Spring.SetUnitSonarStealth(unitID, true)
 	Spring.SetUnitStealth(unitID, true)
 	
+	local data = {
+		turretID = turretID,
+		prevHealth = prevHealth,
+	}
+	IterableMap.Add(mountData, unitID, data)
 	turrets[turretID] = unitID
-	IterableMap.Add(mountData, unitID, {turretID = turretID})
 end
 
 --------------------------------------------------------------------------------
@@ -208,10 +230,19 @@ end
 
 local function UpdateUnitStats(unitID, data)
 	local turretID = data.turretID
-	local health, maxHealth, emp = Spring.GetUnitHealth(turretID)
-	local _, _, _, _, build = Spring.GetUnitHealth(unitID)
+	local turretHealth, maxHealth, emp = Spring.GetUnitHealth(turretID)
+	local mountHealth, _, _, _, build = Spring.GetUnitHealth(unitID)
+	
+	local health = turretHealth + (mountHealth - data.prevHealth) -- Mount can be repaired etc
+	if (mountHealth - data.prevHealth) ~= 0 and turretHealth > maxHealth*0.995 and not data.fixedBuildBug then
+		-- Some bug with fluctuating health every slowupdate after construction.
+		health = maxHealth
+		data.fixedBuildBug = true
+	end
+	data.prevHealth = health
+	
 	Spring.SetUnitHealth(unitID, {health = health, paralyze = emp})
-	Spring.SetUnitHealth(turretID, {build = build})
+	Spring.SetUnitHealth(turretID, {health = health, build = build})
 end
 
 --------------------------------------------------------------------------------

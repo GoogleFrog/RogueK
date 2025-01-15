@@ -3614,7 +3614,7 @@ end
 
 local function GetWaveHeightMult(tierMin, tierMax, params, bucketWidth)
 	local tierDiff = (tierMax - tierMin)
-	local waveMult = (params.waveDirectMult - math.max(0, (bucketWidth - 100)) / 110)/(tierDiff + 1.5)
+	local waveMult = (params.waveDirectMult - math.max(0, (bucketWidth - 100)) / 110)/(1.05*tierDiff + 1.25)
 	return waveMult
 end
 

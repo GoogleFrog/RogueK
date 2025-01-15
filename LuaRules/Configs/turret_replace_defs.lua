@@ -11,6 +11,7 @@ local defs = {
 		},
 		turret = {
 			piece = "chest",
+			turretOffset = 0.8,
 			hidePieces = {
 				"lthigh",
 				"rthigh",
@@ -33,10 +34,11 @@ local defs = {
 	vehassault = {
 		mount = {
 			piece = "turret",
-			turretOffset = 0,
+			turretOffset = -1.5,
 		},
 		turret = {
 			piece = "turret",
+			turretOffset = 1.5,
 		},
 	},
 	jumpraid = {
