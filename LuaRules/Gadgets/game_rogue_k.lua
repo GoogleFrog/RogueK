@@ -19,6 +19,7 @@ if (gadgetHandler:IsSyncedCode()) then
 --------------------------------------------------------------------------------
 
 local shopDefs = VFS.Include("LuaRules/Configs/rk_shop_def.lua")
+local itemDefs = VFS.Include("LuaRules/Configs/rk_item_defs.lua")
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -420,6 +421,27 @@ end
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
+
+function GG.rk_SetupTurrentMountUnit(unitID, unitDefID)
+	local teamID = Spring.GetUnitTeam(unitID)
+	local loadout = loadoutData[teamID]
+	if not loadout then
+		return
+	end
+	local baseUnitIndex = loadout.baseUnitDefMap[unitDefID]
+	if not baseUnitIndex then
+		return
+	end
+	local unitSpec = loadout.units[baseUnitIndex]
+	local turretDef = itemDefs[unitSpec.turret.name]
+	local mountDef = itemDefs[unitSpec.mount.name]
+	GG.rt_SetMultiplicativeStat(unitID, "health", turretDef.healthMult * mountDef.healthMult)
+	GG.rt_SetMultiplicativeStat(unitID, "speed", turretDef.speedMult * mountDef.speedMult)
+	GG.rt_SetMultiplicativeStat(unitID, "range", turretDef.rangeMult * mountDef.rangeMult)
+	GG.rt_SetMultiplicativeStat(unitID, "reload", turretDef.reloadMult * mountDef.reloadMult)
+	GG.rt_SetMultiplicativeStat(unitID, "damage", turretDef.damageMult * mountDef.damageMult)
+	GG.rt_SetBaseStat(unitID, "cost", turretDef.cost + mountDef.cost)
+end
 
 function GG.rk_MapGenerationComplete(startCell, cells, edges)
 	mapGenData.startCell = startCell

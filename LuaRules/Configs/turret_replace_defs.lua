@@ -50,6 +50,15 @@ local defs = {
 			piece = "low_head",
 		},
 	},
+	hoverriot = {
+		mount = {
+			piece = "barrel",
+			turretOffset = 2,
+		},
+		turret = {
+			piece = "barrel",
+		},
+	},
 }
 
 local mountDefs, turretDefs = {}, {}
@@ -58,10 +67,8 @@ for i = 1, #UnitDefs do
 	local baseUnit = ud.customParams.base_unit
 	if baseUnit and defs[baseUnit] then
 		mountDefs[i] = defs[baseUnit].mount
-		Spring.Echo("addmountDefs", i, ud.name)
 		if not ud.customParams.clone_id then
 			turretDefs[i] = defs[baseUnit].turret
-			Spring.Echo("turretDefs", i, ud.name)
 		end
 	end
 end

@@ -22,6 +22,7 @@ if not gadgetHandler:IsSyncedCode() then
 end
 
 include("LuaRules/Configs/customcmds.h.lua")
+GG.ATT_ENABLE_DAMAGE = true
 
 local CMD_ATTACK = CMD.ATTACK
 
@@ -90,6 +91,87 @@ end
 --------------------------------------------------------------------------------
 -- Setup
 
+local function UpdateTurretMountAttributes(unitID)
+	local data = IterableMap.Get(mountData, unitID)
+	
+	local healthMult = (data.multBuffs.health or 1) * (1 + (data.addBuffs.health or 0))
+	data.totalMountAtt.health = healthMult
+	data.totalTurretAtt.health = healthMult
+	
+	local speedMult = (data.multBuffs.speed or 1) * (1 + (data.addBuffs.speed or 0))
+	data.totalMountAtt.speed = data.mountAtt.speed * speedMult
+	
+	local rangeMult = (data.multBuffs.range or 1) * (1 + (data.addBuffs.range or 0))
+	data.totalMountAtt.range = data.mountAtt.range * rangeMult
+	data.totalTurretAtt.range = data.turretAtt.range * rangeMult
+	data.totalTurretAtt.projSpeed = math.sqrt(data.totalTurretAtt.range) -- Maintains Cannon range.
+	
+	local damageMult = (data.multBuffs.damage or 1) * (1 + (data.addBuffs.damage or 0))
+	local projectileMult = math.max(1, math.floor(damageMult - 0.5))
+	damageMult = damageMult / projectileMult
+	data.totalTurretAtt.damage = damageMult
+	data.totalTurretAtt.projectiles = projectileMult
+	data.totalTurretAtt.reload = (data.multBuffs.reload or 1) * (1 + (data.addBuffs.reload or 0))
+	
+	data.totalMountAtt.cost = data.mountAtt.cost * (data.baseStats.cost or 1)
+	
+	--Spring.Utilities.TableEcho(data.multBuffs, "buffs")
+	--Spring.Utilities.TableEcho(data.totalMountAtt, "mount")
+	--Spring.Utilities.TableEcho(data.totalTurretAtt, "turret")
+	
+	GG.Attributes.AddEffect(unitID, "turret_replace", data.totalMountAtt)
+	GG.Attributes.AddEffect(data.turretID, "turret_replace", data.totalTurretAtt)
+	Spring.SetUnitMaxRange(unitID, data.baseRange * rangeMult)
+end
+
+local function SetupMountTurretAttributes(unitData, unitID, unitDefID, turretID, turretDefID)
+	local tud = UnitDefs[turretDefID]
+	local ud = UnitDefs[unitDefID]
+	local turretRange = math.max(tud.maxWeaponRange or 10, 10)
+	local mountRange = math.max(ud.maxWeaponRange or 10, 10)
+	local mountSpeed = ud.speed
+	
+	local prevHealth, mountMaxHealth = Spring.GetUnitHealth(unitID)
+	local _, turretMaxHealth = Spring.GetUnitHealth(turretID)
+	local maxHealth = mountMaxHealth
+	local speed = mountSpeed
+	
+	unitData.baseRange = turretRange
+	unitData.baseHealth = mountMaxHealth
+	
+	unitData.mountAtt = {
+		range = unitData.baseRange / mountRange,
+		speed = ((speed > 0) and (speed / mountSpeed)),
+		cost = 1 / ud.metalCost,
+	}
+	unitData.turretAtt = {
+		range = unitData.baseRange / turretRange,
+	}
+	unitData.multBuffs = {}
+	unitData.addBuffs = {}
+	unitData.totalTurretAtt = {
+		healthAdd = maxHealth - turretMaxHealth,
+	}
+	unitData.totalMountAtt = {
+		weaponNum = 1,
+		healthAdd = maxHealth - mountMaxHealth,
+		reload = 0,
+	}
+	unitData.baseStats = {}
+	
+	Spring.SetUnitRulesParam(turretID, "no_eta_display", 1)
+	Spring.SetUnitRulesParam(turretID, "no_healthbar", 1)
+	
+	-- De-duplicate radar dots.
+	Spring.SetUnitSonarStealth(unitID, true)
+	Spring.SetUnitStealth(unitID, true)
+	
+	GG.rk_SetupTurrentMountUnit(unitID, unitDefID)
+	unitData.prevHealth = prevHealth
+	unitData.inInit = nil
+	UpdateTurretMountAttributes(unitID)
+end
+
 local function ReplaceTurret(unitID, unitDefID, teamID, builderID, turretDefID)
 	local mountDef = mountDefs[unitDefID]
 	local turretDef = turretDefs[turretDefID]
@@ -139,46 +221,14 @@ local function ReplaceTurret(unitID, unitDefID, teamID, builderID, turretDefID)
 	Spring.SetUnitBlocking(turretID, false, false, true, true)
 	Spring.SetUnitNoSelect(turretID, true)
 	
-	-- Mount is responsible for movement, so remove weapon firing ability and set range to mount range.
-	local tud = UnitDefs[turretDefID]
-	local ud = UnitDefs[unitDefID]
-	local turretRange = math.max(tud.maxWeaponRange or 10, 10)
-	local mountRange = math.max(ud.maxWeaponRange or 10, 10)
-	local mountSpeed = ud.speed
-	
-	local prevHealth, mountMaxHealth = Spring.GetUnitHealth(unitID)
-	local _, turretMaxHealth = Spring.GetUnitHealth(turretID)
-	
-	local maxHealth = mountMaxHealth
-	local weaponRange = turretRange
-	local speed = mountSpeed
-	
-	GG.Attributes.AddEffect(unitID, "turret_replace", {
-		weaponNum = 1,
-		range = weaponRange / mountRange,
-		healthAdd = maxHealth - mountMaxHealth,
-		speed = ((speed > 0) and (speed / mountSpeed)),
-		reload = 0
-	})
-	GG.Attributes.AddEffect(turretID, "turret_replace", {
-		range = weaponRange / turretRange,
-		healthAdd = maxHealth - turretMaxHealth,
-	})
-	
-	Spring.SetUnitMaxRange(unitID, weaponRange)
-	Spring.SetUnitRulesParam(turretID, "no_eta_display", 1)
-	Spring.SetUnitRulesParam(turretID, "no_healthbar", 1)
-	
-	-- De-duplicate radar dots.
-	Spring.SetUnitSonarStealth(unitID, true)
-	Spring.SetUnitStealth(unitID, true)
-	
 	local data = {
 		turretID = turretID,
-		prevHealth = prevHealth,
+		inInit = true,
 	}
 	IterableMap.Add(mountData, unitID, data)
 	turrets[turretID] = unitID
+	
+	SetupMountTurretAttributes(data, unitID, unitDefID, turretID, turretDefID)
 end
 
 --------------------------------------------------------------------------------
@@ -266,6 +316,34 @@ local function UpdateCreationChecks(n)
 		end
 	end
 	toCreateCheck = false
+end
+
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- GG
+
+function GG.rt_SetMultiplicativeStat(unitID, statName, value)
+	local data = IterableMap.Get(mountData, unitID)
+	data.multBuffs[statName] = value
+	if not data.inInit then
+		UpdateTurretMountAttributes(unitID)
+	end
+end
+
+function GG.rt_SetAdditiveStat(unitID, statName, value)
+	local data = IterableMap.Get(mountData, unitID)
+	data.addBuffs[statName] = value
+	if not data.inInit then
+		UpdateTurretMountAttributes(unitID)
+	end
+end
+
+function GG.rt_SetBaseStat(unitID, statName, value)
+	local data = IterableMap.Get(mountData, unitID)
+	data.baseStats[statName] = value
+	if not data.inInit then
+		UpdateTurretMountAttributes(unitID)
+	end
 end
 
 --------------------------------------------------------------------------------

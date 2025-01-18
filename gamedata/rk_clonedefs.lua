@@ -14,12 +14,14 @@ local simpleTurrets = {
 	"jumpraid",
 	"cloakassault",
 	"vehassault",
+	"hoverriot",
 }
 local simpleMounts = {
 	"cloakraid",
 	"jumpraid",
 	"cloakassault",
 	"vehassault",
+	"hoverriot",
 }
 local simpleCombos = {
 	"vehcon",
